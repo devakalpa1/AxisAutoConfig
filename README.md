@@ -25,7 +25,7 @@ The application implements a three-user creation workflow for secure camera setu
 2. **Secondary Administrator (Step 2, Optional)**
    - After the root admin is created, you can create a secondary admin user
    - This user will have a custom username of your choice
-   - This user shares the same password as the root admin
+   - While you can use the same password as root admin, this is not required
    - Useful for organizational management and tracking
 
 3. **ONVIF User (Step 3)**
@@ -89,13 +89,13 @@ All subsequent camera operations (turning off WDR, disabling Replay Protection, 
 ### Using pip
 
 ```bash
-pip install axis-config-tool
+pip install axisautoconfig
 ```
 
 After installation, run the tool with:
 
 ```bash
-axis-config-tool
+axisautoconfig
 ```
 
 ### Using PyInstaller
@@ -151,6 +151,8 @@ To create a standalone executable:
 
 ## CSV Format
 
+You can name your CSV file anything you like - the filename doesn't matter. What's important is the internal structure that matches one of these formats:
+
 ### Sequential Assignment
 
 For sequential IP assignment, use a CSV with a single column:
@@ -172,7 +174,7 @@ FinalIPAddress,MACAddress
 192.168.1.102,00408CAABBCC
 ```
 
-Note: MAC addresses should be in a single string format with no delimiters (no colons or dashes).
+Note: MAC addresses must be in a single string format with no delimiters (no colons or dashes). The tool also provides a handy "Download CSV Template" button to get you started with the correct format.
 
 ## Project Structure
 

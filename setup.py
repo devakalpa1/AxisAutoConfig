@@ -7,7 +7,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="axis_config_tool",
+    name="axisautoconfig",
     version="1.0.0",
     author="Geoffrey Stephens",
     author_email="gstephens@storypolish.com",
@@ -41,7 +41,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "axis-config-tool=axis_config_tool.run:main",
+            "axisautoconfig=axis_config_tool.run:main",
         ],
     },
 )
