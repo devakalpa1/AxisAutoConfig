@@ -11,7 +11,7 @@ setup(
     version="1.0.0",
     author="Geoffrey Stephens",
     author_email="gstephens@storypolish.com",
-    description="Unified Setup & Configuration Tool for Axis Cameras",
+    description="AxisAutoConfig: Tool for Axis Camera Setup & Configuration",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/devakalpa1/AxisAutoConfig",

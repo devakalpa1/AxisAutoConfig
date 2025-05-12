@@ -54,7 +54,7 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("Axis Camera Unified Setup & Configuration Tool")
+        self.setWindowTitle("AxisAutoConfig")
         self.setMinimumSize(900, 700)
         
         # Set application icon if available
@@ -640,12 +640,12 @@ class MainWindow(QMainWindow):
             self.csv_format_label.setText(
                 "<b>MAC-Specific Assignment CSV Format:</b><br>"
                 "Requires two columns CSV with headers:<br>"
-                "<code>MACAddress,FinalIPAddress</code><br><br>"
-                "MAC addresses must be in serial format (e.g., 00408C123456)<br><br>"
+                "<code>FinalIPAddress,MACAddress</code><br><br>"
+                "MAC addresses must be in serial format with no delimiters (e.g., 00408C123456)<br><br>"
                 "Example:<br>"
-                "<code>MACAddress,FinalIPAddress<br>"
-                "00408C123456,192.168.1.101<br>"
-                "00408CAABBCC,192.168.1.102</code>"
+                "<code>FinalIPAddress,MACAddress<br>"
+                "192.168.1.101,00408C123456<br>"
+                "192.168.1.102,00408CAABBCC</code>"
             )
     
     def show_step_help(self, step):
@@ -773,7 +773,7 @@ class MainWindow(QMainWindow):
             template_content = "FinalIPAddress\n192.168.1.101\n192.168.1.102\n192.168.1.103"
             default_filename = "sequential_ip_template.csv"
         else:  # MAC-specific
-            template_content = "MACAddress,FinalIPAddress\n00408C123456,192.168.1.101\n00408CAABBCC,192.168.1.102"
+            template_content = "FinalIPAddress,MACAddress\n192.168.1.101,00408C123456\n192.168.1.102,00408CAABBCC"
             default_filename = "mac_specific_ip_template.csv"
         
         # Let user choose where to save the template

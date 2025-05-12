@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Axis Camera Unified Setup & Configuration Tool
+AxisAutoConfig
 Package entry point for installed package
 """
 
@@ -37,7 +37,7 @@ def main():
     
     # Create Qt application
     app = QApplication(sys.argv)
-    app.setApplicationName("Axis Camera Unified Setup & Configuration Tool")
+    app.setApplicationName("AxisAutoConfig")
     
     # Enable high DPI scaling
     app.setAttribute(Qt.AA_EnableHighDpiScaling, True)

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Axis Camera Unified Setup & Configuration Tool
-Main entry point for the application
+AxisAutoConfig
+Main entry point for running from source
 """
 
 import sys
@@ -44,7 +44,7 @@ def main():
     
     # Create Qt application
     app = QApplication(sys.argv)
-    app.setApplicationName("Axis Camera Unified Setup & Configuration Tool")
+    app.setApplicationName("AxisAutoConfig")
     
     # Set application icon
     icon_path = os.path.join("axis_config_tool", "resources", "app_icon.ico")

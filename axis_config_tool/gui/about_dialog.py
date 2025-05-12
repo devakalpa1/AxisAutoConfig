@@ -36,7 +36,7 @@ class AboutDialog(QDialog):
         
         # Application info
         info_text = (
-            "<h3>Axis Camera Unified Setup & Configuration Tool</h3>"
+            "<h3>AxisAutoConfig</h3>"
             "<p>Version 1.0.0</p>"
             "<p>Developed by: Geoffrey Stephens</p>"
             "<p>Contact: gstephens@storypolish.com</p>"

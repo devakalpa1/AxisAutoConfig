@@ -27,15 +27,15 @@ class CSVHandler:
         The CSV can be in one of two formats:
         1. Sequential assignment: A single column of IP addresses
            Example:
-           ip
+           FinalIPAddress
            192.168.1.101
            192.168.1.102
            
-        2. MAC-specific assignment: Two columns with MAC and IP
+        2. MAC-specific assignment: Two columns with IP and MAC
            Example:
-           mac,ip
-           00:40:8C:12:34:56,192.168.1.101
-           00:40:8C:12:34:57,192.168.1.102
+           FinalIPAddress,MACAddress
+           192.168.1.101,00408C123456
+           192.168.1.102,00408CAABBCC
         
         Args:
             file_path: Path to the CSV file
@@ -61,15 +61,16 @@ class CSVHandler:
                 
                 # Validate headers
                 headers = [h.lower() for h in reader.fieldnames or []]
-                if 'ip' not in headers:
-                    raise ValueError("CSV file must contain an 'ip' column")
+                if 'finalipaddress' not in headers and 'ip' not in headers:
+                    raise ValueError("CSV file must contain a 'FinalIPAddress' column")
                 
-                if has_mac and 'mac' not in headers:
-                    raise ValueError("CSV file appears to be MAC-specific but is missing a 'mac' column")
+                if has_mac and 'macaddress' not in headers and 'mac' not in headers:
+                    raise ValueError("CSV file appears to be MAC-specific but is missing a 'MACAddress' column")
                 
                 # Read and validate each row
                 for i, row in enumerate(reader, start=2):  # Start at 2 to account for header row
-                    ip = row.get('ip') or row.get('IP')
+                    ip = (row.get('finalipaddress') or row.get('FinalIPAddress') or 
+                          row.get('ip') or row.get('IP'))
                     
                     if not ip:
                         logging.warning(f"Skipping row {i}: Missing IP address")
@@ -84,7 +85,8 @@ class CSVHandler:
                     
                     # Process according to format
                     if has_mac:
-                        mac = row.get('mac') or row.get('MAC')
+                        mac = (row.get('macaddress') or row.get('MACAddress') or 
+                               row.get('mac') or row.get('MAC'))
                         if not mac:
                             logging.warning(f"Skipping row {i}: Missing MAC address")
                             continue
@@ -200,7 +202,7 @@ class CSVHandler:
                 if mode == 'sequential':
                     # Create a sequential IP list
                     writer = csv.writer(csvfile)
-                    writer.writerow(['ip'])
+                    writer.writerow(['FinalIPAddress'])
                     
                     for i in range(count):
                         writer.writerow([f"{prefix}.{base + i}"])
@@ -208,14 +210,14 @@ class CSVHandler:
                 elif mode == 'mac_specific':
                     # Create a MAC-to-IP mapping
                     writer = csv.writer(csvfile)
-                    writer.writerow(['mac', 'ip'])
+                    writer.writerow(['FinalIPAddress', 'MACAddress'])
                     
                     # Generate sample MAC addresses (just for demonstration)
                     for i in range(count):
-                        # Generate a sample MAC address
-                        mac = f"00:40:8C:{i:02X}:{i+10:02X}:{i+20:02X}"
+                        # Generate a sample MAC address without delimiters
+                        mac = f"00408C{i:02X}{i+10:02X}{i+20:02X}"
                         ip = f"{prefix}.{base + i}"
-                        writer.writerow([mac, ip])
+                        writer.writerow([ip, mac])
                 else:
                     raise ValueError(f"Invalid mode: {mode}")
             

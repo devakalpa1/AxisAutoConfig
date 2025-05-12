@@ -1,6 +1,6 @@
-# Axis Camera Unified Setup & Configuration Tool
+# AxisAutoConfig
 
-The **Axis Camera Unified Setup & Configuration Tool** is a comprehensive solution for initializing and pre-configuring factory-new Axis IP cameras. This Phase 3 release features a fully implemented three-user workflow, enhanced CSV handling, and improved UI/UX experience.
+**AxisAutoConfig** is a comprehensive solution for initializing and pre-configuring factory-new Axis IP cameras. This Phase 3 release features a fully implemented three-user workflow, enhanced CSV handling, and improved UI/UX experience.
 
 ## Overview
 
@@ -156,7 +156,7 @@ To create a standalone executable:
 For sequential IP assignment, use a CSV with a single column:
 
 ```csv
-ip
+FinalIPAddress
 192.168.1.101
 192.168.1.102
 192.168.1.103
@@ -167,10 +167,12 @@ ip
 For MAC address specific assignment, use a CSV with two columns:
 
 ```csv
-mac,ip
-00:40:8C:12:34:56,192.168.1.101
-00:40:8C:12:34:57,192.168.1.102
+FinalIPAddress,MACAddress
+192.168.1.101,00408C123456
+192.168.1.102,00408CAABBCC
 ```
+
+Note: MAC addresses should be in a single string format with no delimiters (no colons or dashes).
 
 ## Project Structure
 

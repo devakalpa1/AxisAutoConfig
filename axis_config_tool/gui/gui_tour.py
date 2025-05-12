@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Axis Camera Unified Setup & Configuration Tool
+AxisAutoConfig
 GUI Tour implementation
 """
 
