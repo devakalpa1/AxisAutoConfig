@@ -978,8 +978,8 @@ class CameraOperations:
         Returns:
             Tuple of (success, response_data)
         """
-        # This is a stub for Phase 1
-        # In future phases, this would be implemented to make actual ONVIF SOAP requests
+        # This is a simple stub implementation
+        # A full implementation would make ONVIF SOAP requests using zeep
         
         return True, {"stub_response": "ONVIF request would be made here"}
 

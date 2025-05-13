@@ -4,25 +4,39 @@
 """
 Axis Camera Unified Setup & Configuration Tool
 CSV Handler module for reading IP lists and generating reports
+
+This module provides functionality for:
+1. Validating and reading IP assignment lists from CSV files
+2. Generating inventory reports of configured cameras
+3. Creating sample CSV templates for users
 """
 
 import csv
 import os
 import logging
 import ipaddress
+import time
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Tuple
 
 
 class CSVHandler:
-    """CSV file operations for IP lists and inventory reports"""
+    """
+    CSV file operations for IP lists and inventory reports
+    
+    Handles validation, parsing, and generation of CSV files for IP assignment
+    and configuration reporting. Special attention is given to validating
+    IP addresses and MAC addresses to prevent configuration errors.
+    """
     
     def __init__(self):
         """Initialize CSV Handler module"""
+        # No specific initialization needed
         pass
     
     def read_ip_list(self, file_path: str) -> List[Dict[str, str]]:
         """
-        Read IP assignment list from CSV file
+        Read IP assignment list from CSV file with enhanced validation
         
         The CSV can be in one of two formats:
         1. Sequential assignment: A single column of IP addresses
@@ -37,11 +51,21 @@ class CSVHandler:
            192.168.1.101,00408C123456
            192.168.1.102,00408CAABBCC
         
+        The function performs extensive validation:
+        - Checks for duplicate IP addresses
+        - Validates IP address format
+        - In MAC-specific mode, validates MAC format and checks for duplicates
+        - Verifies column headers match expected format
+        
         Args:
             file_path: Path to the CSV file
             
         Returns:
             List of dictionaries containing IP assignments
+            
+        Raises:
+            FileNotFoundError: If CSV file doesn't exist
+            ValueError: For validation errors (duplicate IPs, format issues)
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"CSV file not found: {file_path}")
@@ -108,12 +132,57 @@ class CSVHandler:
         if not results:
             raise ValueError("No valid IP assignments found in the CSV file")
         
-        logging.info(f"Read {len(results)} IP assignments from {file_path}")
+        # Perform comprehensive validation of the results
+        
+        # 1. Check for duplicate IPs - critical to prevent network conflicts
+        ips = [item['ip'] for item in results]
+        duplicate_ips = self._find_duplicates(ips)
+        if duplicate_ips:
+            dup_list = ', '.join(duplicate_ips)
+            logging.error(f"Duplicate IP addresses in CSV: {dup_list}")
+            raise ValueError(f"Duplicate IP addresses found in CSV: {dup_list}")
+        
+        # 2. Check for duplicate MACs in MAC-specific mode
+        if has_mac:
+            macs = [item['mac'] for item in results]
+            duplicate_macs = self._find_duplicates(macs)
+            if duplicate_macs:
+                dup_list = ', '.join(duplicate_macs)
+                logging.error(f"Duplicate MAC addresses in CSV: {dup_list}")
+                raise ValueError(f"Duplicate MAC addresses found in CSV: {dup_list}")
+            
+            # 3. Additional check - verify all MACs are properly formatted
+            invalid_macs = []
+            for idx, item in enumerate(results):
+                if not self._is_valid_mac(item['mac']):
+                    invalid_macs.append(f"Row {idx+2}: {item['mac']}")
+            
+            if invalid_macs:
+                error_msg = f"Invalid MAC address format: {', '.join(invalid_macs)}"
+                logging.error(error_msg)
+                raise ValueError(error_msg)
+        
+        # 4. Verify all IPs are in the same subnet if more than one IP exists
+        if len(ips) > 1:
+            try:
+                subnet_consistent = self._verify_ip_subnet_consistency(ips)
+                if not subnet_consistent:
+                    logging.warning(f"IP addresses in CSV span multiple subnets - this might cause connectivity issues")
+            except Exception as e:
+                logging.warning(f"Could not verify subnet consistency: {str(e)}")
+        
+        logging.info(f"Successfully validated and read {len(results)} IP assignments from {file_path}")
         return results
     
     def write_inventory_report(self, file_path: str, camera_data: List[Dict[str, Any]]) -> bool:
         """
-        Write inventory report to CSV file
+        Write comprehensive inventory report to CSV file
+        
+        Creates a detailed report containing:
+        - Camera identification (IPs, MACs, serials)
+        - Configuration status for each operation performed
+        - Timestamp information for tracking purposes
+        - Version information for record-keeping
         
         Args:
             file_path: Path where to save the CSV file
@@ -145,6 +214,13 @@ class CSVHandler:
                 fieldnames.append(f"{op}_success")
                 fieldnames.append(f"{op}_message")
             
+            # Add timestamp and version information to the report
+            report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            from axis_config_tool import __version__
+            
+            # Add metadata fields to the report
+            fieldnames.extend(['report_generated', 'tool_version'])
+            
             # Open file and write header
             with open(file_path, 'w', newline='') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -165,6 +241,10 @@ class CSVHandler:
                         op_data = operations.get(op, {})
                         row[f"{op}_success"] = op_data.get('success', '')
                         row[f"{op}_message"] = op_data.get('message', '')
+                    
+                    # Add metadata
+                    row['report_generated'] = report_time
+                    row['tool_version'] = __version__
                     
                     writer.writerow(row)
             
@@ -228,9 +308,97 @@ class CSVHandler:
             logging.error(f"Error creating sample CSV: {str(e)}")
             return False
     
+    def _verify_ip_subnet_consistency(self, ip_addresses: List[str]) -> bool:
+        """
+        Check if all IP addresses are in the same subnet
+        
+        Args:
+            ip_addresses: List of IP addresses as strings
+            
+        Returns:
+            True if all IPs are in the same subnet, False otherwise
+        """
+        if not ip_addresses or len(ip_addresses) < 2:
+            return True
+            
+        try:
+            # Use the first IP to determine the subnet (assuming /24)
+            first_ip = ipaddress.IPv4Address(ip_addresses[0])
+            expected_network = ipaddress.IPv4Network(f"{first_ip}/24", strict=False)
+            
+            # Check all other IPs against this subnet
+            for ip in ip_addresses[1:]:
+                current_ip = ipaddress.IPv4Address(ip)
+                if current_ip not in expected_network:
+                    return False
+                    
+            return True
+        except Exception as e:
+            logging.warning(f"Error checking subnet consistency: {str(e)}")
+            return True  # Default to True on error to not block the process
+    
+    def _is_valid_mac(self, mac: str) -> bool:
+        """
+        Perform comprehensive MAC address validation
+        
+        This goes beyond basic format checking to ensure:
+        - MAC follows correct format (with or without delimiters)
+        - Characters are valid hexadecimal digits
+        - No invalid patterns (all zeros, all FFs, etc.)
+        
+        Args:
+            mac: MAC address string to validate
+            
+        Returns:
+            True if MAC is valid, False otherwise
+        """
+        # Remove any delimiters
+        clean_mac = mac.replace(':', '').replace('-', '').replace('.', '').upper()
+        
+        # Check length and hex characters
+        if len(clean_mac) != 12 or not all(c in '0123456789ABCDEF' for c in clean_mac):
+            return False
+            
+        # Check for invalid patterns (all zeros, all FFs)
+        if clean_mac == '000000000000' or clean_mac == 'FFFFFFFFFFFF':
+            return False
+            
+        return True
+    
+    def _find_duplicates(self, items: List[str]) -> List[str]:
+        """
+        Find duplicate items in a list
+        
+        Important for identifying both duplicate IP addresses and MAC addresses
+        in CSV files, which would cause conflicts during configuration.
+        
+        Args:
+            items: List of items to check for duplicates
+            
+        Returns:
+            List of duplicate items found
+        """
+        seen = set()
+        duplicates = set()
+        
+        for item in items:
+            if item in seen:
+                duplicates.add(item)
+            else:
+                seen.add(item)
+        
+        return list(duplicates)
+    
     def _validate_mac_format(self, mac: str) -> bool:
         """
-        Validate basic MAC address format
+        Validate basic MAC address format (for initial parsing)
+        
+        Detects common MAC address formats:
+        - 00:40:8C:12:34:56 (colon delimited)
+        - 00-40-8C-12-34-56 (hyphen delimited)
+        - 00408C123456 (no delimiters)
+        
+        For more comprehensive validation, use _is_valid_mac()
         
         Args:
             mac: MAC address string to validate

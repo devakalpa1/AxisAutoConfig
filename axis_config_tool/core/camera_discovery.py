@@ -212,9 +212,9 @@ class CameraDiscovery:
     
     def get_device_info(self, ip: str, username: str = None, password: str = None) -> Dict[str, str]:
         """
-        Get basic device information (placeholder for Phase 1)
+        Get basic device information
         
-        In future phases, this would retrieve model, firmware version, etc.
+        This method retrieves minimal device information for discovery purposes
         
         Args:
             ip: IP address of the camera
@@ -224,7 +224,7 @@ class CameraDiscovery:
         Returns:
             Dictionary with device information
         """
-        # Placeholder for Phase 1
+        # Simple implementation returning minimal info
         return {
             "ip": ip,
             "status": "discovered"

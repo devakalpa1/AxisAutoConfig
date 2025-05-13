@@ -54,7 +54,7 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("AxisAutoConfig")
+        self.setWindowTitle("AxisAutoConfig v1.0.0")
         self.setMinimumSize(900, 700)
         
         # Set application icon if available
@@ -406,7 +406,6 @@ class MainWindow(QMainWindow):
         section = QGroupBox("Completion & Next Steps / Save Report")
         layout = QHBoxLayout(section)
         
-        # Phase 3 implementation
         save_report_btn = QPushButton("Save Inventory Report...")
         save_report_btn.setEnabled(False)
         layout.addWidget(save_report_btn)
