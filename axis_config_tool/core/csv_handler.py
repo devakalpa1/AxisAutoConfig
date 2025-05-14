@@ -34,20 +34,20 @@ class CSVHandler:
         # No specific initialization needed
         pass
     
-    def read_ip_list(self, file_path: str) -> List[Dict[str, str]]:
+    def read_ip_list(self, file_path: str) -> Union[List[Dict[str, str]], Dict[str, str], List[str]]:
         """
         Read IP assignment list from CSV file with enhanced validation
         
         The CSV can be in one of two formats:
         1. Sequential assignment: A single column of IP addresses
            Example:
-           FinalIPAddress
+           IP
            192.168.1.101
            192.168.1.102
            
         2. MAC-specific assignment: Two columns with IP and MAC
            Example:
-           FinalIPAddress,MACAddress
+           IP,MAC
            192.168.1.101,00408C123456
            192.168.1.102,00408CAABBCC
         
@@ -86,10 +86,10 @@ class CSVHandler:
                 # Validate headers
                 headers = [h.lower() for h in reader.fieldnames or []]
                 if 'finalipaddress' not in headers and 'ip' not in headers:
-                    raise ValueError("CSV file must contain a 'FinalIPAddress' column")
+                    raise ValueError("CSV file must contain an 'IP' column")
                 
                 if has_mac and 'macaddress' not in headers and 'mac' not in headers:
-                    raise ValueError("CSV file appears to be MAC-specific but is missing a 'MACAddress' column")
+                    raise ValueError("CSV file appears to be MAC-specific but is missing a 'MAC' column")
                 
                 # Read and validate each row
                 for i, row in enumerate(reader, start=2):  # Start at 2 to account for header row
@@ -173,6 +173,82 @@ class CSVHandler:
         
         logging.info(f"Successfully validated and read {len(results)} IP assignments from {file_path}")
         return results
+    
+    def read_sequential_ip_list(self, file_path: str) -> List[str]:
+        """
+        Read sequential IP assignment list from CSV file
+        
+        Expects a CSV with a single column of IP addresses:
+        Example:
+           IP
+           192.168.1.101
+           192.168.1.102
+        
+        Args:
+            file_path: Path to the CSV file
+            
+        Returns:
+            List of IP addresses
+            
+        Raises:
+            FileNotFoundError: If CSV file doesn't exist
+            ValueError: For validation errors (duplicate IPs, format issues)
+        """
+        # Use the general function but validate it's a sequential format
+        results = self.read_ip_list(file_path)
+        
+        # Check if the results seem to be in sequential format
+        if results and isinstance(results[0], dict) and 'mac' in results[0]:
+            # This appears to be MAC-specific format, convert to sequential
+            logging.warning("CSV appears to be in MAC-specific format, but sequential was requested. Using IP addresses only.")
+        
+        # Extract just the IP addresses
+        ip_list = []
+        for item in results:
+            if isinstance(item, dict):
+                ip_list.append(item.get('ip', ''))
+            else:
+                # If we somehow got a string, add it directly
+                ip_list.append(str(item))
+                
+        return ip_list
+    
+    def read_mac_specific_ip_list(self, file_path: str) -> Dict[str, str]:
+        """
+        Read MAC-specific IP assignment list from CSV file
+        
+        Expects a CSV with IP addresses and MAC addresses:
+        Example:
+           IP,MAC
+           192.168.1.101,00408C123456
+           192.168.1.102,00408CAABBCC
+        
+        Args:
+            file_path: Path to the CSV file
+            
+        Returns:
+            Dictionary mapping MAC addresses to IP addresses
+            
+        Raises:
+            FileNotFoundError: If CSV file doesn't exist
+            ValueError: For validation errors or if CSV is not in MAC-specific format
+        """
+        # Use the general function but validate it's a MAC-specific format
+        results = self.read_ip_list(file_path)
+        
+        # Check if the results seem to be in MAC-specific format
+        if not results or not isinstance(results[0], dict) or 'mac' not in results[0]:
+            raise ValueError("CSV file is not in MAC-specific format (missing MAC address column)")
+        
+        # Convert to a dictionary mapping MACs to IPs
+        mac_to_ip = {}
+        for item in results:
+            mac = item.get('mac', '').upper().replace(':', '').replace('-', '')
+            ip = item.get('ip', '')
+            if mac and ip:
+                mac_to_ip[mac] = ip
+                
+        return mac_to_ip
     
     def write_inventory_report(self, file_path: str, camera_data: List[Dict[str, Any]]) -> bool:
         """
@@ -282,7 +358,7 @@ class CSVHandler:
                 if mode == 'sequential':
                     # Create a sequential IP list
                     writer = csv.writer(csvfile)
-                    writer.writerow(['FinalIPAddress'])
+                    writer.writerow(['IP'])
                     
                     for i in range(count):
                         writer.writerow([f"{prefix}.{base + i}"])
@@ -290,7 +366,7 @@ class CSVHandler:
                 elif mode == 'mac_specific':
                     # Create a MAC-to-IP mapping
                     writer = csv.writer(csvfile)
-                    writer.writerow(['FinalIPAddress', 'MACAddress'])
+                    writer.writerow(['IP', 'MAC'])
                     
                     # Generate sample MAC addresses (just for demonstration)
                     for i in range(count):
