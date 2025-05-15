@@ -24,10 +24,12 @@ from axis_config_tool.core.dhcp_manager import DHCPManager
 from axis_config_tool.core.camera_discovery import CameraDiscovery
 from axis_config_tool.core.camera_operations import CameraOperations
 from axis_config_tool.core.csv_handler import CSVHandler
-from axis_config_tool.workers.unified_worker import DHCPWorker, DiscoveryWorker
+from axis_config_tool.workers.unified_worker import DiscoveryWorker
 from axis_config_tool.gui.about_dialog import AboutDialog
 from axis_config_tool.gui.gui_tour import GUITour
 from axis_config_tool.gui.user_creation_dialog import UserCreationDialog
+from axis_config_tool.gui.dhcp_server_dialog import DHCPServerDialog
+from axis_config_tool.gui.network_config_dialog import NetworkConfigDialog
 
 
 class MainWindow(QMainWindow):
@@ -126,7 +128,7 @@ class MainWindow(QMainWindow):
     
     def create_network_setup_section(self):
         """Create Section 1: Host PC Network Setup & DHCP Server Configuration"""
-        section = QGroupBox("Host PC Network Setup & DHCP Server Configuration")
+        section = QGroupBox("Network Setup & Camera Discovery")
         layout = QVBoxLayout(section)
         
         # Instructions panel at the top
@@ -135,8 +137,8 @@ class MainWindow(QMainWindow):
         instruction_steps = [
             "<b>Step 1:</b> Manually set your PC's IP address to a static IP on the camera network",
             "<b>Step 2:</b> Connect your PC directly to the camera(s) with an Ethernet switch",
-            "<b>Step 3:</b> Select a network interface and configure DHCP server settings below",
-            "<b>Step 4:</b> Start the DHCP server and power on your cameras"
+            "<b>Step 3:</b> Configure and start the DHCP server using the button below",
+            "<b>Step 4:</b> Power on your cameras and discover them on the network"
         ]
         
         for i, instruction in enumerate(instruction_steps):
@@ -158,99 +160,60 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(instructions)
         
-        # Network Interface Detection
-        network_frame = QFrame()
-        network_layout = QGridLayout(network_frame)
-        
-        network_layout.addWidget(QLabel("Available Network Interfaces:"), 0, 0)
-        self.network_interfaces_combo = QComboBox()
-        network_layout.addWidget(self.network_interfaces_combo, 0, 1)
-        
-        refresh_btn = QPushButton("Refresh Network Interfaces")
-        refresh_btn.clicked.connect(self.refresh_network_interfaces)
-        network_layout.addWidget(refresh_btn, 0, 2)
-        
-        network_layout.addWidget(QLabel("DHCP Server IP (This PC's Static IP):"), 1, 0)
-        self.dhcp_server_ip = QLineEdit()
-        network_layout.addWidget(self.dhcp_server_ip, 1, 1)
-        
-        layout.addWidget(network_frame)
-        
-        # DHCP Configuration
+        # DHCP Server Button and Status
         dhcp_frame = QFrame()
-        dhcp_layout = QGridLayout(dhcp_frame)
+        dhcp_layout = QHBoxLayout(dhcp_frame)
         
-        self.use_default_dhcp = QCheckBox("Use Default DHCP Settings (Recommended)")
-        self.use_default_dhcp.setChecked(True)
-        self.use_default_dhcp.stateChanged.connect(self.toggle_dhcp_inputs)
-        dhcp_layout.addWidget(self.use_default_dhcp, 0, 0, 1, 2)
+        self.dhcp_server_btn = QPushButton("Configure & Start DHCP Server")
+        self.dhcp_server_btn.setMinimumHeight(40)  # Make button larger
+        self.dhcp_server_btn.setStyleSheet("font-weight: bold;")
+        self.dhcp_server_btn.clicked.connect(self.open_dhcp_server_dialog)
+        dhcp_layout.addWidget(self.dhcp_server_btn)
         
-        dhcp_layout.addWidget(QLabel("DHCP IP Range Start:"), 1, 0)
-        self.dhcp_start_ip = QLineEdit("192.168.0.50")
-        dhcp_layout.addWidget(self.dhcp_start_ip, 1, 1)
+        dhcp_layout.addWidget(QLabel("Status:"))
+        self.dhcp_status_label = QLabel("Stopped")
+        self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
+        dhcp_layout.addWidget(self.dhcp_status_label)
         
-        dhcp_layout.addWidget(QLabel("DHCP IP Range End:"), 2, 0)
-        self.dhcp_end_ip = QLineEdit("192.168.0.97")
-        dhcp_layout.addWidget(self.dhcp_end_ip, 2, 1)
-        
-        dhcp_layout.addWidget(QLabel("DHCP Lease Time (seconds):"), 3, 0)
-        self.dhcp_lease_time = QLineEdit("3600")
-        dhcp_layout.addWidget(self.dhcp_lease_time, 3, 1)
+        # Add stretch to push everything to the left
+        dhcp_layout.addStretch(1)
         
         layout.addWidget(dhcp_frame)
         
-        # DHCP Server Controls
-        controls_frame = QFrame()
-        controls_layout = QHBoxLayout(controls_frame)
+        # Camera Discovery Section
+        discovery_group = QGroupBox("Camera Discovery")
+        discovery_layout = QVBoxLayout(discovery_group)
         
-        self.start_dhcp_btn = QPushButton("Start DHCP Server")
-        self.start_dhcp_btn.clicked.connect(self.start_dhcp_server)
-        controls_layout.addWidget(self.start_dhcp_btn)
-        
-        self.stop_dhcp_btn = QPushButton("Stop DHCP Server")
-        self.stop_dhcp_btn.clicked.connect(self.stop_dhcp_server)
-        self.stop_dhcp_btn.setEnabled(False)
-        controls_layout.addWidget(self.stop_dhcp_btn)
-        
-        layout.addWidget(controls_frame)
-        
-        # DHCP Status
-        status_frame = QFrame()
-        status_layout = QHBoxLayout(status_frame)
-        
-        status_layout.addWidget(QLabel("DHCP Server Status:"))
-        self.dhcp_status_label = QLabel("Stopped")
-        self.dhcp_status_label.setStyleSheet("color: red;")
-        status_layout.addWidget(self.dhcp_status_label)
-        
-        layout.addWidget(status_frame)
-        
-        # Initialize with default settings
-        self.toggle_dhcp_inputs(Qt.Checked)
-        
-        return section
-    
-    def create_config_inputs_section(self):
-        """Create Section 2: Camera Discovery & Configuration Inputs"""
-        section = QGroupBox("Camera Discovery & Configuration Inputs")
-        layout = QVBoxLayout(section)
-        
-        # Camera Discovery
-        discovery_frame = QFrame()
-        discovery_layout = QHBoxLayout(discovery_frame)
-        
+        discovery_button_layout = QHBoxLayout()
         self.discover_cameras_btn = QPushButton("Discover Cameras on DHCP Network")
-        self.discover_cameras_btn.clicked.connect(self.discover_cameras)
         self.discover_cameras_btn.setEnabled(False)
-        discovery_layout.addWidget(self.discover_cameras_btn)
+        self.discover_cameras_btn.clicked.connect(self.discover_cameras)
+        discovery_button_layout.addWidget(self.discover_cameras_btn)
         
-        layout.addWidget(discovery_frame)
+        # Add refresh button
+        refresh_discovery_btn = QPushButton("Refresh")
+        refresh_discovery_btn.setToolTip("Refresh camera discovery")
+        refresh_discovery_btn.clicked.connect(self.discover_cameras)
+        refresh_discovery_btn.setEnabled(False)
+        self.refresh_discovery_btn = refresh_discovery_btn
+        discovery_button_layout.addWidget(refresh_discovery_btn)
+        
+        discovery_layout.addLayout(discovery_button_layout)
         
         # Discovered Cameras Table
         self.cameras_table = QTableWidget(0, 2)
         self.cameras_table.setHorizontalHeaderLabels(["Temporary DHCP IP", "MAC Address"])
         self.cameras_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(self.cameras_table)
+        discovery_layout.addWidget(self.cameras_table)
+        
+        layout.addWidget(discovery_group)
+        
+        return section
+    
+    def create_config_inputs_section(self):
+        """Create Section 2: Configuration Inputs"""
+        section = QGroupBox("Camera Configuration Settings")
+        layout = QVBoxLayout(section)
         
         # Configuration Inputs
         config_frame = QFrame()
@@ -275,6 +238,7 @@ class MainWindow(QMainWindow):
         self.user_credentials = {
             "root_password": "",
             "secondary_username": "",
+            "secondary_password": "",
             "onvif_username": "",
             "onvif_password": ""
         }
@@ -293,44 +257,33 @@ class MainWindow(QMainWindow):
         config_layout.addWidget(user_group, row, 0, 1, 2)
         row += 1
         
-        # Network Configuration Group Box
+        # Network Configuration Button and Status
         net_group = QGroupBox("Network Configuration Settings")
-        net_layout = QGridLayout(net_group)
-        net_row = 0
+        net_layout = QVBoxLayout(net_group)
         
-        net_layout.addWidget(QLabel("Final Static Subnet Mask:"), net_row, 0)
-        self.subnet_mask = QLineEdit("255.255.255.0")
-        net_layout.addWidget(self.subnet_mask, net_row, 1)
-        net_row += 1
+        # Button to launch network configuration dialog
+        network_btn_layout = QHBoxLayout()
+        configure_network_btn = QPushButton("Configure Network Settings...")
+        configure_network_btn.clicked.connect(self.open_network_config_dialog)
+        configure_network_btn.setMinimumHeight(36)  # Make button taller
+        network_btn_layout.addWidget(configure_network_btn)
         
-        net_layout.addWidget(QLabel("Final Static Default Gateway:"), net_row, 0)
-        self.default_gateway = QLineEdit()
-        net_layout.addWidget(self.default_gateway, net_row, 1)
-        net_row += 1
+        # Status indicator
+        self.network_config_status = QLabel("Not configured")
+        self.network_config_status.setStyleSheet("color: #888; font-style: italic;")
+        network_btn_layout.addWidget(self.network_config_status, 1)
         
-        net_layout.addWidget(QLabel("VAPIX Protocol for Config:"), net_row, 0)
-        self.vapix_protocol = QComboBox()
-        self.vapix_protocol.addItems(["HTTP", "HTTPS"])
-        net_layout.addWidget(self.vapix_protocol, net_row, 1)
-        net_row += 1
+        net_layout.addLayout(network_btn_layout)
         
-        # IP Assignment Mode section
-        net_layout.addWidget(QLabel("Final IP Assignment Mode:"), net_row, 0)
-        
-        mode_layout = QHBoxLayout()
-        self.ip_mode_combo = QComboBox()
-        self.ip_mode_combo.addItems(["Sequential Assignment", "MAC-Specific Assignment"])
-        
-        mode_help_btn = QPushButton("?")
-        mode_help_btn.setFixedSize(24, 24)
-        mode_help_btn.setToolTip("Click for help about assignment modes")
-        mode_help_btn.clicked.connect(self.show_ip_mode_help)
-        
-        mode_layout.addWidget(self.ip_mode_combo)
-        mode_layout.addWidget(mode_help_btn)
-        mode_layout.addStretch(1)
-        
-        net_layout.addLayout(mode_layout, net_row, 1)
+        # Initialize network settings storage
+        self.network_settings = {
+            'subnet_mask': '255.255.255.0',
+            'default_gateway': '',
+            'protocol': 'HTTP',
+            'ip_mode': 'sequential',
+            'csv_path': '',
+            'csv_entries': []
+        }
         
         # Add the network group to the main config layout
         config_layout.addWidget(net_group, row, 0, 1, 2)
@@ -338,55 +291,22 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(config_frame)
         
-        # CSV Format Help Box
-        csv_format_group = QGroupBox("CSV Format Information")
-        csv_format_layout = QVBoxLayout(csv_format_group)
-        
-        self.csv_format_label = QLabel()
-        self.csv_format_label.setTextFormat(Qt.RichText)
-        self.csv_format_label.setWordWrap(True)
-        
-        # Add download template link
-        template_layout = QHBoxLayout()
-        template_layout.addWidget(self.csv_format_label)
-        
-        download_template_btn = QPushButton("Download CSV Template")
-        download_template_btn.setFixedWidth(150)
-        download_template_btn.clicked.connect(self.save_csv_template)
-        template_layout.addWidget(download_template_btn, 0, Qt.AlignTop | Qt.AlignRight)
-        
-        csv_format_layout.addLayout(template_layout)
-        
-        layout.addWidget(csv_format_group)
-        
-        # CSV Input
-        csv_frame = QFrame()
-        csv_layout = QHBoxLayout(csv_frame)
-        
-        self.load_csv_btn = QPushButton("Load Final Static IP List (CSV)...")
-        self.load_csv_btn.clicked.connect(self.load_csv)
-        csv_layout.addWidget(self.load_csv_btn)
-        
-        self.csv_path_label = QLabel("No CSV file loaded")
-        csv_layout.addWidget(self.csv_path_label)
-        
-        layout.addWidget(csv_frame)
-        
         # Start Configuration Button
         config_button_frame = QFrame()
         config_button_layout = QHBoxLayout(config_button_frame)
         
         self.start_config_btn = QPushButton("Start Camera Pre-Configuration Process")
         self.start_config_btn.setEnabled(False)
+        self.start_config_btn.clicked.connect(self.start_camera_configuration)
+        self.start_config_btn.setMinimumHeight(40)  # Make button larger
+        self.start_config_btn.setStyleSheet("font-weight: bold;")
         config_button_layout.addWidget(self.start_config_btn)
         
+        # Progress indicator
+        self.config_progress_label = QLabel("")
+        config_button_layout.addWidget(self.config_progress_label)
+        
         layout.addWidget(config_button_frame)
-        
-        # Connect signals for CSV format explanation
-        self.ip_mode_combo.currentIndexChanged.connect(self.update_csv_format_text)
-        
-        # Initialize CSV format text
-        self.update_csv_format_text(self.ip_mode_combo.currentIndex())
         
         return section
     
@@ -406,9 +326,14 @@ class MainWindow(QMainWindow):
         section = QGroupBox("Completion & Next Steps / Save Report")
         layout = QHBoxLayout(section)
         
-        save_report_btn = QPushButton("Save Inventory Report...")
-        save_report_btn.setEnabled(False)
-        layout.addWidget(save_report_btn)
+        self.save_report_btn = QPushButton("Save Inventory Report...")
+        self.save_report_btn.setEnabled(False)
+        self.save_report_btn.clicked.connect(self.save_configuration_report)
+        layout.addWidget(self.save_report_btn)
+        
+        # Result summary
+        self.result_summary_label = QLabel("")
+        layout.addWidget(self.result_summary_label)
         
         layout.addStretch()
         
@@ -450,104 +375,50 @@ class MainWindow(QMainWindow):
             self.log("System light theme detected and applied")
     
     @Slot()
-    def refresh_network_interfaces(self):
-        """Refresh the list of available network interfaces"""
-        self.network_interfaces_combo.clear()
+    def open_dhcp_server_dialog(self):
+        """Open the DHCP server configuration dialog"""
         
-        try:
-            interfaces = self.dhcp_manager.get_network_interfaces()
-            for interface_name, interface_details in interfaces.items():
-                if interface_details.get("ipv4"):
-                    display_text = f"{interface_name} - {interface_details['ipv4']}"
-                    self.network_interfaces_combo.addItem(display_text, interface_name)
+        # If dialog doesn't exist yet, create it
+        if not hasattr(self, 'dhcp_dialog') or self.dhcp_dialog is None:
+            self.dhcp_dialog = DHCPServerDialog(self.dhcp_manager, self)
             
-            if self.network_interfaces_combo.count() > 0:
-                self.log("Network interfaces refreshed successfully")
-            else:
-                self.log("No network interfaces with IPv4 addresses found")
-        except Exception as e:
-            self.log(f"Error refreshing network interfaces: {str(e)}")
-    
-    @Slot(int)
-    def toggle_dhcp_inputs(self, state):
-        """Toggle DHCP configuration input fields based on checkbox state"""
-        enabled = state != Qt.Checked
-        self.dhcp_start_ip.setEnabled(enabled)
-        self.dhcp_end_ip.setEnabled(enabled)
-        self.dhcp_lease_time.setEnabled(enabled)
-    
-    @Slot()
-    def start_dhcp_server(self):
-        """Start the DHCP server"""
-        if not self.network_interfaces_combo.currentData():
-            self.log("Error: No network interface selected")
-            return
-            
-        if not self.dhcp_server_ip.text():
-            self.log("Error: DHCP Server IP (This PC's Static IP) is required")
-            return
-            
-        # Get configuration values
-        interface = self.network_interfaces_combo.currentData()
-        server_ip = self.dhcp_server_ip.text()
-        start_ip = self.dhcp_start_ip.text()
-        end_ip = self.dhcp_end_ip.text()
-        lease_time = int(self.dhcp_lease_time.text())
+            # Connect signals from the dialog
+            self.dhcp_dialog.dhcp_started.connect(self.on_dhcp_started)
+            self.dhcp_dialog.dhcp_stopped.connect(self.on_dhcp_stopped)
+            self.dhcp_dialog.dhcp_status_update.connect(self.update_dhcp_status)
+            self.dhcp_dialog.log_message.connect(self.log)
         
-        # Configure DHCP server
-        try:
-            self.dhcp_manager.configure(
-                interface=interface, 
-                server_ip=server_ip,
-                start_ip=start_ip,
-                end_ip=end_ip,
-                lease_time=lease_time
-            )
-            
-            # Start DHCP server in worker thread
-            self.dhcp_worker = DHCPWorker(self.dhcp_manager)
-            self.dhcp_worker.status_update.connect(self.update_dhcp_status)
-            self.dhcp_worker.log_message.connect(self.log)
-            self.dhcp_worker.start()
-            
-            # Update UI
-            self.start_dhcp_btn.setEnabled(False)
-            self.stop_dhcp_btn.setEnabled(True)
-            self.discover_cameras_btn.setEnabled(True)
-            self.is_dhcp_running = True
-            
-            self.log(f"DHCP server starting on {interface} with IP range {start_ip} to {end_ip}")
-        except Exception as e:
-            self.log(f"Error starting DHCP server: {str(e)}")
+        # Show the dialog
+        self.dhcp_dialog.show()
+        self.dhcp_dialog.raise_()
+        self.dhcp_dialog.activateWindow()
     
-    @Slot()
-    def stop_dhcp_server(self):
-        """Stop the DHCP server"""
-        if self.dhcp_worker and self.is_dhcp_running:
-            try:
-                # Signal worker to stop
-                self.dhcp_worker.stop()
-                self.dhcp_worker = None
-                
-                # Update UI
-                self.start_dhcp_btn.setEnabled(True)
-                self.stop_dhcp_btn.setEnabled(False)
-                self.discover_cameras_btn.setEnabled(False)
-                self.is_dhcp_running = False
-                self.update_dhcp_status("Stopped")
-                
-                self.log("DHCP server stopped")
-            except Exception as e:
-                self.log(f"Error stopping DHCP server: {str(e)}")
+    def on_dhcp_started(self, server_ip):
+        """Handle DHCP server started signal from dialog"""
+        self.is_dhcp_running = True
+        self.discover_cameras_btn.setEnabled(True)
+        self.refresh_discovery_btn.setEnabled(True)
+        self.dhcp_server_btn.setText("DHCP Server Configuration...")
+        
+        self.log(f"DHCP server started successfully on {server_ip}")
+    
+    def on_dhcp_stopped(self):
+        """Handle DHCP server stopped signal from dialog"""
+        self.is_dhcp_running = False
+        self.discover_cameras_btn.setEnabled(False)
+        self.refresh_discovery_btn.setEnabled(False)
+        self.dhcp_server_btn.setText("Configure & Start DHCP Server")
+        
+        self.log("DHCP server stopped")
     
     @Slot(str)
     def update_dhcp_status(self, status):
         """Update the DHCP server status label"""
         self.dhcp_status_label.setText(status)
         if status == "Running":
-            self.dhcp_status_label.setStyleSheet("color: green;")
+            self.dhcp_status_label.setStyleSheet("color: green; font-weight: bold;")
         else:
-            self.dhcp_status_label.setStyleSheet("color: red;")
+            self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
     
     @Slot()
     def discover_cameras(self):
@@ -562,21 +433,26 @@ class MainWindow(QMainWindow):
         
         # Start discovery in worker thread
         try:
-            leases = self.dhcp_manager.get_active_leases()
-            
-            self.discovery_worker = DiscoveryWorker(
-                self.camera_discovery, 
-                leases
-            )
-            self.discovery_worker.camera_found.connect(self.add_discovered_camera)
-            self.discovery_worker.log_message.connect(self.log)
-            self.discovery_worker.finished.connect(self.discovery_completed)
-            
-            # Update UI
-            self.discover_cameras_btn.setEnabled(False)
-            
-            self.discovery_worker.start()
-            self.log("Starting camera discovery...")
+            # Get leases from DHCP manager via the dialog
+            if hasattr(self, 'dhcp_dialog') and self.dhcp_dialog is not None:
+                leases = self.dhcp_manager.get_active_leases()
+                
+                self.discovery_worker = DiscoveryWorker(
+                    self.camera_discovery, 
+                    leases
+                )
+                self.discovery_worker.camera_found.connect(self.add_discovered_camera)
+                self.discovery_worker.log_message.connect(self.log)
+                self.discovery_worker.finished.connect(self.discovery_completed)
+                
+                # Update UI
+                self.discover_cameras_btn.setEnabled(False)
+                self.refresh_discovery_btn.setEnabled(False)
+                
+                self.discovery_worker.start()
+                self.log("Starting camera discovery...")
+            else:
+                self.log("Error: DHCP server must be configured and running to discover cameras")
         except Exception as e:
             self.log(f"Error during camera discovery: {str(e)}")
             self.discover_cameras_btn.setEnabled(True)
@@ -599,53 +475,73 @@ class MainWindow(QMainWindow):
         self.log(f"Camera discovery completed. Found {len(self.discovered_cameras)} potential Axis camera(s).")
         
         # Enable start config button if we have cameras and a CSV
-        if len(self.discovered_cameras) > 0 and os.path.exists(self.csv_path_label.text()):
+        if len(self.discovered_cameras) > 0 and hasattr(self, 'csv_path_label') and os.path.exists(self.csv_path_label.text()):
             self.start_config_btn.setEnabled(True)
+            
+        # Re-enable discovery buttons
+        self.discover_cameras_btn.setEnabled(True)
+        self.refresh_discovery_btn.setEnabled(True)
     
     @Slot()
-    def load_csv(self):
-        """Load CSV file with final static IP assignments"""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv)")
+    def open_network_config_dialog(self):
+        """Open the network configuration dialog"""
         
-        if file_path:
-            try:
-                result = self.csv_handler.read_ip_list(file_path)
-                self.csv_path_label.setText(file_path)  # Store full path
-                self.log(f"Loaded CSV file: {file_path}")
-                self.log(f"CSV contains {len(result)} IP address entries")
-                
-                # Enable start config button if we have cameras and a CSV
-                if len(self.discovered_cameras) > 0:
-                    self.start_config_btn.setEnabled(True)
-            except Exception as e:
-                self.log(f"Error loading CSV file: {str(e)}")
-                QMessageBox.warning(self, "CSV Error", str(e))
+        # If dialog doesn't exist yet, create it
+        dialog = NetworkConfigDialog(self.csv_handler, self)
+            
+        # Connect signals from the dialog
+        dialog.settings_updated.connect(self.update_network_settings)
+        dialog.log_message.connect(self.log)
+        
+        # Initialize dialog with current settings
+        if self.network_settings.get('csv_path'):
+            dialog.csv_path = self.network_settings.get('csv_path')
+            dialog.csv_path_label.setText(os.path.basename(dialog.csv_path))
+        
+        dialog.subnet_mask.setText(self.network_settings.get('subnet_mask', '255.255.255.0'))
+        dialog.default_gateway.setText(self.network_settings.get('default_gateway', ''))
+        
+        # Set the protocol
+        protocol_idx = 0  # Default to HTTP
+        if self.network_settings.get('protocol') == 'HTTPS':
+            protocol_idx = 1
+        dialog.vapix_protocol.setCurrentIndex(protocol_idx)
+        
+        # Set the IP assignment mode
+        if self.network_settings.get('ip_mode') == 'mac_specific':
+            dialog.mac_specific_radio.setChecked(True)
+        else:
+            dialog.sequential_radio.setChecked(True)
+        
+        # Show the dialog
+        if dialog.exec():
+            self.log("Network configuration updated")
+        else:
+            self.log("Network configuration cancelled")
     
-    @Slot()
-    def update_csv_format_text(self, index):
-        """Update the CSV format explanation based on selected mode"""
-        if index == 0:  # Sequential
-            self.csv_format_label.setText(
-                "<b>Sequential Assignment CSV Format:</b><br>"
-                "Requires a single column CSV with header:<br>"
-                "<code>FinalIPAddress</code><br><br>"
-                "Example:<br>"
-                "<code>FinalIPAddress<br>"
-                "192.168.1.101<br>"
-                "192.168.1.102<br>"
-                "192.168.1.103</code>"
+    @Slot(dict)
+    def update_network_settings(self, settings):
+        """Update network settings from the dialog"""
+        self.network_settings = settings
+        
+        # Update status label
+        if settings.get('csv_path'):
+            csv_filename = os.path.basename(settings.get('csv_path', ''))
+            entries_count = len(settings.get('csv_entries', []))
+            
+            # Update the status label
+            self.network_config_status.setText(
+                f"✓ {entries_count} IPs loaded from {csv_filename} | " 
+                f"Mode: {settings.get('ip_mode', 'sequential').title()}"
             )
-        else:  # MAC-specific
-            self.csv_format_label.setText(
-                "<b>MAC-Specific Assignment CSV Format:</b><br>"
-                "Requires two columns CSV with headers:<br>"
-                "<code>FinalIPAddress,MACAddress</code><br><br>"
-                "MAC addresses must be in serial format with no delimiters (e.g., 00408C123456)<br><br>"
-                "Example:<br>"
-                "<code>FinalIPAddress,MACAddress<br>"
-                "192.168.1.101,00408C123456<br>"
-                "192.168.1.102,00408CAABBCC</code>"
-            )
+            self.network_config_status.setStyleSheet("color: green; font-weight: normal;")
+            
+            # Enable start config button if we have cameras
+            if len(self.discovered_cameras) > 0:
+                self.start_config_btn.setEnabled(True)
+        else:
+            self.network_config_status.setText("⚠ No CSV file loaded")
+            self.network_config_status.setStyleSheet("color: orange; font-weight: normal;")
     
     def show_step_help(self, step):
         """Show detailed help for a specific setup step as a tooltip"""
@@ -656,11 +552,12 @@ class MainWindow(QMainWindow):
             "Use a standard Ethernet switch to connect your PC and all cameras.\n"
             "Do not connect to your production network during initial setup.",
             
-            "Select the network interface connected to the cameras.\n"
+            "Open the DHCP server configuration dialog to set up and start a DHCP server.\n"
             "The DHCP server will provide temporary IP addresses to factory-new cameras.",
             
             "Once the DHCP server is running, power on your cameras one at a time.\n"
-            "Wait approximately 30 seconds between powering on each camera."
+            "Wait approximately 30 seconds between powering on each camera.\n"
+            "Then click 'Discover Cameras' to detect them on the network."
         ]
         
         # Get the global position of the button that was clicked
@@ -673,26 +570,6 @@ class MainWindow(QMainWindow):
             # Fallback to cursor position if sender not found
             QToolTip.showText(QCursor.pos(), help_texts[step], self)
         
-    def show_ip_mode_help(self):
-        """Show help about IP assignment modes as a tooltip"""
-        help_text = (
-            "<b>Sequential Assignment:</b><br>"
-            "Cameras will be assigned IPs in the order they are discovered, "
-            "using the sequence of IP addresses from your CSV file.<br><br>"
-            "<b>MAC-Specific Assignment:</b><br>"
-            "Each camera will be assigned an IP based on matching its MAC address "
-            "to the corresponding entry in your CSV file."
-        )
-        
-        # Get the global position of the button that was clicked
-        btn = self.sender()
-        if btn:
-            global_pos = btn.mapToGlobal(btn.rect().topRight())
-            # Show the tooltip slightly offset from the button
-            QToolTip.showText(global_pos, help_text, btn)
-        else:
-            # Fallback to cursor position if sender not found
-            QToolTip.showText(QCursor.pos(), help_text, self)
     
     @Slot()
     def show_about(self):
@@ -763,31 +640,6 @@ class MainWindow(QMainWindow):
         
         QMessageBox.information(self, "User Creation Workflow Help", help_text)
     
-    @Slot()
-    def save_csv_template(self):
-        """Save a CSV template based on the currently selected IP assignment mode"""
-        mode_index = self.ip_mode_combo.currentIndex()
-        
-        if mode_index == 0:  # Sequential
-            template_content = "FinalIPAddress\n192.168.1.101\n192.168.1.102\n192.168.1.103"
-            default_filename = "sequential_ip_template.csv"
-        else:  # MAC-specific
-            template_content = "FinalIPAddress,MACAddress\n192.168.1.101,00408C123456\n192.168.1.102,00408CAABBCC"
-            default_filename = "mac_specific_ip_template.csv"
-        
-        # Let user choose where to save the template
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save CSV Template", default_filename, "CSV Files (*.csv)"
-        )
-        
-        if file_path:
-            try:
-                with open(file_path, 'w') as f:
-                    f.write(template_content)
-                self.log(f"CSV template saved to: {file_path}")
-            except Exception as e:
-                self.log(f"Error saving CSV template: {str(e)}")
-                QMessageBox.warning(self, "Error", f"Could not save CSV template: {str(e)}")
     
     @Slot()
     def view_documentation(self):
@@ -815,10 +667,267 @@ class MainWindow(QMainWindow):
         """Add a message to the log area"""
         self.log_text.append(f"{message}")
     
+    @Slot()
+    def start_camera_configuration(self):
+        """Start the camera configuration process"""
+        # Check if we have cameras and network settings with CSV
+        if not self.discovered_cameras:
+            QMessageBox.warning(self, "Configuration Error", "No cameras discovered. Please discover cameras first.")
+            return
+            
+        if not self.network_settings or not self.network_settings.get('csv_entries'):
+            QMessageBox.warning(self, "Configuration Error", 
+                "Network configuration is incomplete. Please configure network settings and load a CSV file.")
+            return
+            
+        # Check if user credentials are configured
+        if not self.user_credentials["root_password"]:
+            result = QMessageBox.question(
+                self,
+                "User Credentials Required",
+                "No user credentials configured. Would you like to configure them now?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if result == QMessageBox.Yes:
+                self.configure_user_settings()
+            return
+        
+        # Collect configuration parameters
+        config_params = {}
+        
+        # User credentials
+        config_params['admin_user'] = 'root'  # Force to 'root' for Axis OS v10
+        config_params['admin_pass'] = self.user_credentials["root_password"]
+        
+        # Secondary admin and ONVIF user
+        config_params['secondary_username'] = self.user_credentials["secondary_username"]
+        config_params['secondary_pass'] = self.user_credentials["secondary_password"]
+        config_params['onvif_user'] = self.user_credentials["onvif_username"]
+        config_params['onvif_pass'] = self.user_credentials["onvif_password"]
+        
+        # Network configuration from dialog
+        config_params['subnet_mask'] = self.network_settings.get('subnet_mask', '255.255.255.0')
+        config_params['gateway'] = self.network_settings.get('default_gateway', '')
+        config_params['protocol'] = self.network_settings.get('protocol', 'HTTP')
+        config_params['ip_mode'] = self.network_settings.get('ip_mode', 'sequential')
+        
+        # IP list from network settings
+        if config_params['ip_mode'] == 'sequential':
+            # For sequential mode, entries should be a list of IPs
+            config_params['ip_list'] = self.network_settings.get('csv_entries', [])
+        else:
+            # For MAC-specific mode, entries should already be a dictionary
+            config_params['ip_list'] = self.network_settings.get('csv_entries', {})
+        
+        # Confirm with the user
+        camera_count = len(self.discovered_cameras)
+        ip_count = len(config_params['ip_list'])
+        
+        confirm_msg = (
+            f"Ready to configure {camera_count} camera(s) with the following settings:\n\n"
+            f"- Root Administrator Password: {'*'*len(config_params['admin_pass'])}\n"
+        )
+        
+        if config_params['secondary_username']:
+            confirm_msg += f"- Secondary Administrator: {config_params['secondary_username']}\n"
+        
+        if config_params['onvif_user']:
+            confirm_msg += f"- ONVIF User: {config_params['onvif_user']}\n"
+            
+        confirm_msg += (
+            f"- Subnet Mask: {config_params['subnet_mask']}\n"
+            f"- Default Gateway: {config_params['gateway'] or 'None'}\n"
+            f"- Protocol: {config_params['protocol']}\n"
+            f"- IP Assignment Mode: {config_params['ip_mode'].title()}\n"
+            f"- Available IPs in CSV: {ip_count}\n\n"
+            "The following operations will be performed on each camera:\n"
+            "1. Set root administrator password\n"
+        )
+        
+        if config_params['secondary_username']:
+            confirm_msg += "2. Create secondary administrator account\n"
+            
+        if config_params['onvif_user']:
+            confirm_msg += "3. Create ONVIF user account\n"
+            
+        confirm_msg += (
+            "4. Turn off WDR (Wide Dynamic Range)\n"
+            "5. Turn off Replay Attack Protection\n"
+            "6. Assign final static IP address\n\n"
+            "This process may take several minutes. Proceed?"
+        )
+        
+        reply = QMessageBox.question(
+            self, 
+            "Confirm Camera Configuration",
+            confirm_msg,
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.No:
+            return
+            
+        # Disable configuration button during the process
+        self.start_config_btn.setEnabled(False)
+        self.config_progress_label.setText("0 / 0 cameras")
+        self.result_summary_label.setText("")
+        self.save_report_btn.setEnabled(False)
+        
+        # Create and start the configuration worker
+        from axis_config_tool.workers.unified_worker import ConfigurationWorker
+        
+        self.config_worker = ConfigurationWorker(
+            self.camera_operations,
+            self.discovered_cameras,
+            config_params
+        )
+        
+        # Connect signals
+        self.config_worker.log_message.connect(self.log)
+        self.config_worker.progress_update.connect(self.update_config_progress)
+        self.config_worker.camera_configured.connect(self.on_camera_configured)
+        self.config_worker.configuration_complete.connect(self.on_configuration_complete)
+        
+        # Start the worker
+        self.log("Starting camera configuration process...")
+        self.config_worker.start()
+    
+    @Slot(int, int)
+    def update_config_progress(self, current, total):
+        """Update the configuration progress label"""
+        self.config_progress_label.setText(f"{current} / {total} cameras")
+    
+    @Slot(str, bool, dict)
+    def on_camera_configured(self, ip, success, details):
+        """Handle completion of configuration for a single camera"""
+        if success:
+            self.log(f"Camera at {ip} successfully configured")
+        else:
+            temp_ip = details.get('temp_ip', ip)
+            status = details.get('status', 'Unknown Error')
+            self.log(f"Camera at {temp_ip} failed: {status}")
+    
+    @Slot(list)
+    def on_configuration_complete(self, results):
+        """Handle completion of all camera configurations"""
+        # Re-enable the configuration button
+        self.start_config_btn.setEnabled(True)
+        
+        # Calculate success/failure statistics
+        success_count = len([r for r in results if r.get('status') == 'Success'])
+        total_count = len(results)
+        
+        # Update result summary
+        self.result_summary_label.setText(
+            f"Results: {success_count} of {total_count} cameras successfully configured"
+        )
+        
+        # Store results for reporting
+        self.config_results = results
+        
+        # Enable the save report button
+        self.save_report_btn.setEnabled(True)
+        
+        # Show completion message
+        if success_count == total_count:
+            QMessageBox.information(
+                self,
+                "Configuration Complete",
+                f"All {total_count} camera(s) were successfully configured."
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Configuration Partial",
+                f"{success_count} of {total_count} camera(s) were successfully configured. "
+                f"Check the log for details on failures."
+            )
+    
+    @Slot()
+    def save_configuration_report(self):
+        """Save a CSV report of the configuration results"""
+        if not hasattr(self, 'config_results') or not self.config_results:
+            QMessageBox.warning(self, "No Data", "No configuration results to save.")
+            return
+            
+        # Ask user for file location
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Configuration Report",
+            "camera_configuration_report.csv",
+            "CSV Files (*.csv)"
+        )
+        
+        if not file_path:
+            return
+            
+        try:
+            # Generate CSV content
+            csv_content = "Original IP,MAC Address,Final IP,Status,Root Admin,Secondary Admin,ONVIF User,WDR Off,Replay Protection Off\n"
+            
+            for result in self.config_results:
+                temp_ip = result.get('temp_ip', 'N/A')
+                mac = result.get('mac', 'N/A')
+                final_ip = result.get('final_ip', 'N/A')
+                status = result.get('status', 'N/A')
+                
+                operations = result.get('operations', {})
+                root_admin = "Success" if operations.get('root_admin', {}).get('success', False) else "Failed"
+                secondary_admin = "Success" if operations.get('secondary_admin', {}).get('success', False) else "N/A"
+                onvif_user = "Success" if operations.get('onvif_user', {}).get('success', False) else "N/A"
+                wdr_off = "Success" if operations.get('wdr_off', {}).get('success', False) else "Failed"
+                replay_off = "Success" if operations.get('replay_protection_off', {}).get('success', False) else "Failed"
+                
+                csv_content += f"{temp_ip},{mac},{final_ip},{status},{root_admin},{secondary_admin},{onvif_user},{wdr_off},{replay_off}\n"
+                
+            # Write to file
+            with open(file_path, 'w') as f:
+                f.write(csv_content)
+                
+            self.log(f"Configuration report saved to {file_path}")
+            
+            # Ask if user wants to open the file
+            reply = QMessageBox.question(
+                self,
+                "Report Saved",
+                f"Report saved to {file_path}. Do you want to open it now?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                if sys.platform == 'win32':
+                    os.startfile(file_path)
+                else:
+                    import subprocess
+                    subprocess.call(('xdg-open', file_path))
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Error saving report: {str(e)}")
+            self.log(f"Error saving configuration report: {str(e)}")
+
     def closeEvent(self, event):
         """Handle application close event"""
         if self.is_dhcp_running:
-            # Stop DHCP server if running
-            self.stop_dhcp_server()
+            # If we have a DHCP dialog with running server, stop it
+            if hasattr(self, 'dhcp_dialog') and self.dhcp_dialog is not None:
+                self.dhcp_dialog.stop_dhcp_server()
+        
+        # If configuration is in progress, ask before closing
+        if hasattr(self, 'config_worker') and self.config_worker and self.config_worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "Configuration In Progress",
+                "Camera configuration is still in progress. Closing now will interrupt the process. "
+                "Are you sure you want to close?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Stop the worker gracefully
+                self.config_worker.stop()
+                self.config_worker.wait()
+            else:
+                event.ignore()
+                return
             
         event.accept()

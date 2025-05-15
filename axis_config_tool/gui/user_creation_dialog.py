@@ -70,10 +70,11 @@ class UserCreationDialog(QDialog):
         self.secondary_username.setPlaceholderText("Optional - custom admin name")
         secondary_layout.addWidget(self.secondary_username, 0, 1)
         
-        # Note about shared password
-        note = QLabel("Note: Secondary admin will use the same password as root admin")
-        note.setStyleSheet("color: #666; font-style: italic;")
-        secondary_layout.addWidget(note, 1, 0, 1, 2)
+        secondary_layout.addWidget(QLabel("Secondary Administrator Password:"), 1, 0)
+        self.secondary_password = QLineEdit()
+        self.secondary_password.setEchoMode(QLineEdit.Password)
+        self.secondary_password.setPlaceholderText("Optional - leave blank to use root password")
+        secondary_layout.addWidget(self.secondary_password, 1, 1)
         
         main_layout.addWidget(secondary_group)
         
@@ -129,9 +130,15 @@ class UserCreationDialog(QDialog):
     
     def get_user_credentials(self):
         """Return the configured user credentials"""
+        # Get the secondary password - if blank, use the root password
+        secondary_pass = self.secondary_password.text()
+        if self.secondary_username.text() and not secondary_pass:
+            secondary_pass = self.root_password.text()
+            
         return {
             "root_password": self.root_password.text(),
             "secondary_username": self.secondary_username.text(),
+            "secondary_password": secondary_pass,
             "onvif_username": self.onvif_username.text(),
             "onvif_password": self.onvif_password.text()
         }

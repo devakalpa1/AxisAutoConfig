@@ -110,12 +110,15 @@ class AboutDialog(QDialog):
             "</ul>"
             
             "<p><b>Innovative Approach:</b></p>"
-            "<p>AxisAutoConfig was developed after extensive research with network administrators "
-            "and the Axis developer community to solve the challenges of configuring multiple "
-            "factory-new cameras efficiently.</p>"
+            "<p>AxisAutoConfig was developed after extensive research into Axis APIs and DHCP mechanisms "
+            "to solve the challenges of configuring multiple factory-new cameras efficiently.</p>"
             
             "<p>The custom DHCP implementation and multi-step configuration workflow represent "
             "a novel approach to automation in this domain.</p>"
+            
+            "<p><b>Acknowledgements:</b></p>"
+            "<p>Special thanks to <a href='https://github.com/Cacsjep'>Cacsjep</a> from the Axis developer community "
+            "for assistance in finding the correct API endpoint for setting static IP addresses.</p>"
         )
         
         features_label = QLabel(features_text)

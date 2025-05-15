@@ -110,6 +110,8 @@ class ConfigurationWorker(QThread):
         # Extract configuration parameters
         admin_user = self.config_params.get('admin_user', '')
         admin_pass = self.config_params.get('admin_pass', '')
+        secondary_username = self.config_params.get('secondary_username', '')
+        secondary_pass = self.config_params.get('secondary_pass', '')
         onvif_user = self.config_params.get('onvif_user', '')
         onvif_pass = self.config_params.get('onvif_pass', '')
         subnet_mask = self.config_params.get('subnet_mask', '255.255.255.0')
@@ -188,11 +190,12 @@ class ConfigurationWorker(QThread):
             self.log_message.emit(f"Root admin created or verified on {temp_ip}")
             
             # Step 2: Create secondary admin user with custom username
-            # Only if a different username than 'root' was specified
-            if admin_user and admin_user != 'root':
-                self.log_message.emit(f"Creating secondary admin user '{admin_user}' on {temp_ip}...")
+            # Only if a secondary username was specified
+            if secondary_username:
+                self.log_message.emit(f"Creating secondary admin user '{secondary_username}' on {temp_ip}...")
+                # Use root credentials to authenticate, but create the secondary user with its own password
                 secondary_success, secondary_message = self.camera_operations.create_secondary_admin(
-                    temp_ip, admin_pass, admin_user, admin_pass, protocol
+                    temp_ip, 'root', admin_pass, secondary_username, secondary_pass, protocol
                 )
                 
                 camera_result['operations']['secondary_admin'] = {
@@ -201,10 +204,10 @@ class ConfigurationWorker(QThread):
                 }
                 
                 if not secondary_success:
-                    self.log_message.emit(f"Failed to create secondary admin user '{admin_user}' on {temp_ip}: {secondary_message}")
+                    self.log_message.emit(f"Failed to create secondary admin user '{secondary_username}' on {temp_ip}: {secondary_message}")
                     # Continue anyway - not critical as we have root
                 else:
-                    self.log_message.emit(f"Secondary admin user '{admin_user}' created on {temp_ip}")
+                    self.log_message.emit(f"Secondary admin user '{secondary_username}' created on {temp_ip}")
             
             # Step 3: Create ONVIF user if needed - always authenticate as root
             if onvif_user and onvif_pass:
