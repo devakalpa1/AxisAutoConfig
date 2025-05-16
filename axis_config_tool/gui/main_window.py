@@ -8,16 +8,15 @@ Main window implementation
 
 import sys
 import os
-import logging
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QLabel, QCheckBox, 
                              QLineEdit, QPushButton, QComboBox, QTextEdit, 
-                             QSplitter, QFileDialog, QGroupBox, QTabWidget,
+                             QSplitter, QFileDialog, QGroupBox, 
                              QFrame, QSpacerItem, QSizePolicy, QTableWidget,
                              QTableWidgetItem, QHeaderView, QMessageBox, 
                              QApplication, QToolTip)
-from PySide6.QtCore import Qt, QSize, Signal, Slot, QThread, QSettings, QPoint, QTimer
-from PySide6.QtGui import QFont, QPalette, QIcon, QColor, QCursor
+from PySide6.QtCore import Qt, Signal, Slot, QSettings, QTimer
+from PySide6.QtGui import QPalette, QIcon, QCursor
 
 # Import package modules
 from axis_config_tool.core.dhcp_manager import DHCPManager
@@ -55,7 +54,7 @@ class MainWindow(QMainWindow):
         self.check_first_run()
         
     def init_ui(self):
-        """Initialize the user interface"""
+        """Set up the application's main UI components including layout, menus, and widgets"""
         self.setWindowTitle("AxisAutoConfig v1.0.0")
         self.setMinimumSize(900, 700)
         
@@ -127,7 +126,7 @@ class MainWindow(QMainWindow):
         self.gui_tour.start_tour()
     
     def create_network_setup_section(self):
-        """Create Section 1: Host PC Network Setup & DHCP Server Configuration"""
+        """Build the network setup section with DHCP configuration and camera discovery components"""
         section = QGroupBox("Network Setup & Camera Discovery")
         layout = QVBoxLayout(section)
         
@@ -137,7 +136,7 @@ class MainWindow(QMainWindow):
         instruction_steps = [
             "<b>Step 1:</b> Manually set your PC's IP address to a static IP on the camera network",
             "<b>Step 2:</b> Connect your PC directly to the camera(s) with an Ethernet switch",
-            "<b>Step 3:</b> Configure and start the DHCP server using the button below",
+            "<b>Step 3:</b> Configure the DHCP server and start it using the buttons below",
             "<b>Step 4:</b> Power on your cameras and discover them on the network"
         ]
         
@@ -160,25 +159,51 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(instructions)
         
-        # DHCP Server Button and Status
-        dhcp_frame = QFrame()
-        dhcp_layout = QHBoxLayout(dhcp_frame)
+        # DHCP Server Configuration and Control
+        dhcp_group = QGroupBox("DHCP Server Configuration & Control")
+        dhcp_group_layout = QVBoxLayout(dhcp_group)
         
-        self.dhcp_server_btn = QPushButton("Configure & Start DHCP Server")
-        self.dhcp_server_btn.setMinimumHeight(40)  # Make button larger
-        self.dhcp_server_btn.setStyleSheet("font-weight: bold;")
-        self.dhcp_server_btn.clicked.connect(self.open_dhcp_server_dialog)
-        dhcp_layout.addWidget(self.dhcp_server_btn)
+        # First row: Configuration button
+        config_btn_layout = QHBoxLayout()
         
-        dhcp_layout.addWidget(QLabel("Status:"))
+        self.dhcp_config_btn = QPushButton("Configure DHCP Server")
+        self.dhcp_config_btn.setMinimumHeight(36)
+        self.dhcp_config_btn.clicked.connect(self.open_dhcp_server_dialog)
+        config_btn_layout.addWidget(self.dhcp_config_btn)
+        
+        dhcp_group_layout.addLayout(config_btn_layout)
+        
+        # Second row: Start/Stop DHCP buttons and status
+        dhcp_control_layout = QHBoxLayout()
+        
+        # Start DHCP Server button
+        self.start_dhcp_btn = QPushButton("Start DHCP Server")
+        self.start_dhcp_btn.setMinimumHeight(36)
+        self.start_dhcp_btn.setStyleSheet("font-weight: bold; background-color: #388E3C; color: white;")
+        self.start_dhcp_btn.clicked.connect(self.start_dhcp_server)
+        dhcp_control_layout.addWidget(self.start_dhcp_btn)
+        
+        # Stop DHCP Server button
+        self.stop_dhcp_btn = QPushButton("Stop DHCP Server")
+        self.stop_dhcp_btn.setMinimumHeight(36)
+        self.stop_dhcp_btn.setStyleSheet("font-weight: bold; background-color: #D32F2F; color: white;")
+        self.stop_dhcp_btn.clicked.connect(self.stop_dhcp_server)
+        self.stop_dhcp_btn.setEnabled(False)
+        dhcp_control_layout.addWidget(self.stop_dhcp_btn)
+        
+        # Status label
+        dhcp_control_layout.addWidget(QLabel("Status:"))
         self.dhcp_status_label = QLabel("Stopped")
         self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
-        dhcp_layout.addWidget(self.dhcp_status_label)
+        dhcp_control_layout.addWidget(self.dhcp_status_label)
         
         # Add stretch to push everything to the left
-        dhcp_layout.addStretch(1)
+        dhcp_control_layout.addStretch(1)
         
-        layout.addWidget(dhcp_frame)
+        dhcp_group_layout.addLayout(dhcp_control_layout)
+        
+        # Add the DHCP group to main layout
+        layout.addWidget(dhcp_group)
         
         # Camera Discovery Section
         discovery_group = QGroupBox("Camera Discovery")
@@ -211,7 +236,7 @@ class MainWindow(QMainWindow):
         return section
     
     def create_config_inputs_section(self):
-        """Create Section 2: Configuration Inputs"""
+        """Build the camera configuration section with user creation and network settings"""
         section = QGroupBox("Camera Configuration Settings")
         layout = QVBoxLayout(section)
         
@@ -311,7 +336,7 @@ class MainWindow(QMainWindow):
         return section
     
     def create_log_section(self):
-        """Create Section 3: Pre-Configuration Process & Real-time Log"""
+        """Build the log display panel for showing application messages and operation status"""
         section = QGroupBox("Pre-Configuration Process & Real-time Log")
         layout = QVBoxLayout(section)
         
@@ -322,7 +347,7 @@ class MainWindow(QMainWindow):
         return section
     
     def create_completion_section(self):
-        """Create Section 4: Completion & Next Steps / Save Report"""
+        """Build the results panel for displaying configuration outcomes and saving reports"""
         section = QGroupBox("Completion & Next Steps / Save Report")
         layout = QHBoxLayout(section)
         
@@ -340,7 +365,7 @@ class MainWindow(QMainWindow):
         return section
     
     def create_menu_bar(self):
-        """Create the application menu bar"""
+        """Set up the application's main menu with file and help options"""
         menu_bar = self.menuBar()
         
         # File menu
@@ -383,9 +408,7 @@ class MainWindow(QMainWindow):
             self.dhcp_dialog = DHCPServerDialog(self.dhcp_manager, self)
             
             # Connect signals from the dialog
-            self.dhcp_dialog.dhcp_started.connect(self.on_dhcp_started)
-            self.dhcp_dialog.dhcp_stopped.connect(self.on_dhcp_stopped)
-            self.dhcp_dialog.dhcp_status_update.connect(self.update_dhcp_status)
+            self.dhcp_dialog.configuration_updated.connect(self.on_dhcp_configuration_updated)
             self.dhcp_dialog.log_message.connect(self.log)
         
         # Show the dialog
@@ -393,23 +416,69 @@ class MainWindow(QMainWindow):
         self.dhcp_dialog.raise_()
         self.dhcp_dialog.activateWindow()
     
-    def on_dhcp_started(self, server_ip):
-        """Handle DHCP server started signal from dialog"""
-        self.is_dhcp_running = True
-        self.discover_cameras_btn.setEnabled(True)
-        self.refresh_discovery_btn.setEnabled(True)
-        self.dhcp_server_btn.setText("DHCP Server Configuration...")
+    def on_dhcp_configuration_updated(self, config):
+        """Handle DHCP configuration updated signal from dialog"""
+        self.log(f"DHCP server configured successfully for interface {config['interface']}")
         
-        self.log(f"DHCP server started successfully on {server_ip}")
+        # Enable the start button now that DHCP is configured
+        self.start_dhcp_btn.setEnabled(True)
     
-    def on_dhcp_stopped(self):
-        """Handle DHCP server stopped signal from dialog"""
-        self.is_dhcp_running = False
-        self.discover_cameras_btn.setEnabled(False)
-        self.refresh_discovery_btn.setEnabled(False)
-        self.dhcp_server_btn.setText("Configure & Start DHCP Server")
+    @Slot()
+    def start_dhcp_server(self):
+        """Start the DHCP server"""
+        if not hasattr(self, 'dhcp_dialog') or self.dhcp_dialog is None:
+            QMessageBox.warning(self, "Configuration Required", "Please configure the DHCP server first.")
+            self.open_dhcp_server_dialog()
+            return
         
-        self.log("DHCP server stopped")
+        try:
+            # Get current configuration from dialog
+            config = self.dhcp_dialog.get_current_configuration()
+            if not config:
+                self.log("Cannot start DHCP server: No configuration available")
+                return
+            
+            # Start DHCP server in worker thread
+            from axis_config_tool.workers.unified_worker import DHCPWorker
+            
+            self.dhcp_worker = DHCPWorker(self.dhcp_manager)
+            self.dhcp_worker.status_update.connect(self.update_dhcp_status)
+            self.dhcp_worker.log_message.connect(self.log)
+            self.dhcp_worker.start()
+            
+            # Update UI
+            self.start_dhcp_btn.setEnabled(False)
+            self.stop_dhcp_btn.setEnabled(True)
+            self.is_dhcp_running = True
+            
+            self.log(f"DHCP server starting on {config['interface']} with IP range {config['start_ip']} to {config['end_ip']}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "DHCP Server Error", f"Failed to start DHCP server: {str(e)}")
+            self.log(f"Error starting DHCP server: {str(e)}")
+    
+    @Slot()
+    def stop_dhcp_server(self):
+        """Stop the DHCP server"""
+        if hasattr(self, 'dhcp_worker') and self.dhcp_worker and self.is_dhcp_running:
+            try:
+                # Signal worker to stop
+                self.dhcp_worker.stop()
+                self.dhcp_worker = None
+                
+                # Update UI
+                self.start_dhcp_btn.setEnabled(True)
+                self.stop_dhcp_btn.setEnabled(False)
+                self.discover_cameras_btn.setEnabled(False)
+                self.refresh_discovery_btn.setEnabled(False)
+                self.is_dhcp_running = False
+                self.update_dhcp_status("Stopped")
+                
+                self.log("DHCP server stopped")
+                
+            except Exception as e:
+                QMessageBox.warning(self, "DHCP Server Error", f"Error stopping DHCP server: {str(e)}")
+                self.log(f"Error stopping DHCP server: {str(e)}")
     
     @Slot(str)
     def update_dhcp_status(self, status):
@@ -417,6 +486,9 @@ class MainWindow(QMainWindow):
         self.dhcp_status_label.setText(status)
         if status == "Running":
             self.dhcp_status_label.setStyleSheet("color: green; font-weight: bold;")
+            # Enable camera discovery buttons
+            self.discover_cameras_btn.setEnabled(True)
+            self.refresh_discovery_btn.setEnabled(True)
         else:
             self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
     
@@ -664,7 +736,7 @@ class MainWindow(QMainWindow):
                              "README.md file could not be located.")
     
     def log(self, message):
-        """Add a message to the log area"""
+        """Display a message in the application log panel"""
         self.log_text.append(f"{message}")
     
     @Slot()
@@ -908,9 +980,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """Handle application close event"""
         if self.is_dhcp_running:
-            # If we have a DHCP dialog with running server, stop it
-            if hasattr(self, 'dhcp_dialog') and self.dhcp_dialog is not None:
-                self.dhcp_dialog.stop_dhcp_server()
+            # Stop the DHCP server if it's running
+            self.stop_dhcp_server()
         
         # If configuration is in progress, ask before closing
         if hasattr(self, 'config_worker') and self.config_worker and self.config_worker.isRunning():

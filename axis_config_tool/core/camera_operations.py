@@ -354,7 +354,7 @@ class CameraOperations:
                         time.sleep(self.retry_delay)
                     else:
                         return False, f"Failed to create ONVIF user: {error_str}"
-        
+                    
         except Exception as e:
             logging.error(f"Unexpected error creating ONVIF user on {temp_ip}: {str(e)}")
             return False, f"Unexpected error creating ONVIF user: {str(e)}"
@@ -363,8 +363,8 @@ class CameraOperations:
         return False, f"Failed to create ONVIF user after {self.retry_count} attempts"
     
     def _create_onvif_user_via_vapix(self, temp_ip: str, admin_user: str, admin_pass: str,
-                                    onvif_user: str, onvif_pass: str, 
-                                    protocol: str = "HTTP") -> Tuple[bool, str]:
+                                   onvif_user: str, onvif_pass: str, 
+                                   protocol: str = "HTTP") -> Tuple[bool, str]:
         """
         Create ONVIF user using VAPIX API (simpler approach than SOAP)
         
@@ -385,14 +385,15 @@ class CameraOperations:
         # Endpoint for creating users
         endpoint = "/axis-cgi/pwdgrp.cgi"
         
-        # Parameters for the request - use ONVIF and viewer group for ONVIF users
+        # Parameters for the request - correct format for Axis OS 10.12
+        # The key is to include both 'onvif' in sgrp (special group) and proper privilege groups
         params = {
             "action": "add",
             "user": onvif_user,
             "pwd": onvif_pass,
-            "grp": "viewer:operator:admin",  # ONVIF needs admin privileges to access all features
-            "sgrp": "onvif",  # Special ONVIF group on Axis cameras
-            "comment": "ONVIF user created by Axis Camera Unified Setup Tool"
+            "grp": "users",  # Basic user group for Axis OS 10.12
+            "sgrp": "onvif:admin:operator:viewer",  # ONVIF with proper privileges for Axis OS 10.12
+            "comment": "ONVIF user created by AxisAutoConfig"
         }
         
         url = urljoin(base_url, endpoint)
@@ -410,6 +411,32 @@ class CameraOperations:
                 if response.status_code == 200:
                     logging.info(f"Successfully created ONVIF user '{onvif_user}' on {temp_ip} via VAPIX")
                     return True, f"ONVIF user '{onvif_user}' created successfully via VAPIX"
+                
+                # Handle specific error cases
+                if "account already exist" in response.text.lower():
+                    logging.warning(f"ONVIF user '{onvif_user}' already exists on {temp_ip}")
+                    
+                    # Try to update existing user with correct groups
+                    update_params = {
+                        "action": "update",
+                        "user": onvif_user,
+                        "pwd": onvif_pass,  # Update password
+                        "grp": "users",  # Ensure basic user group
+                        "sgrp": "onvif:admin:operator:viewer"  # Ensure correct ONVIF access for OS 10.12
+                    }
+                    
+                    update_response = requests.get(
+                        url,
+                        params=update_params,
+                        auth=HTTPDigestAuth(admin_user, admin_pass),
+                        timeout=self.timeout,
+                        verify=False
+                    )
+                    
+                    if update_response.status_code == 200:
+                        return True, f"ONVIF user '{onvif_user}' already exists, updated settings"
+                    else:
+                        return True, f"ONVIF user '{onvif_user}' already exists, but could not update"
                 
                 error_message = f"Failed to create ONVIF user via VAPIX (HTTP {response.status_code}): {response.text}"
                 logging.error(error_message)
@@ -430,7 +457,7 @@ class CameraOperations:
                     return False, f"Error creating ONVIF user via VAPIX: {str(e)}"
         
         return False, f"Failed to create ONVIF user via VAPIX after {self.retry_count} attempts"
-    
+
     def set_wdr_off(self, temp_ip: str, admin_user: str, admin_pass: str,
                     protocol: str = "HTTP") -> Tuple[bool, str]:
         """
@@ -564,7 +591,7 @@ class CameraOperations:
                     return False, f"Error turning off Replay Protection: {str(e)}"
         
         return False, f"Failed to turn off Replay Protection after {self.retry_count} attempts"
-    
+
     def set_final_static_ip(self, temp_ip: str, admin_user: str, admin_pass: str,
                            ip_config: Dict[str, str], protocol: str = "HTTP") -> Tuple[bool, str]:
         """
@@ -603,7 +630,41 @@ class CameraOperations:
         # If JSON API failed, try the legacy param.cgi API
         logging.info(f"JSON API failed, trying legacy param.cgi API: {message}")
         return self._set_ip_using_param_cgi(base_url, admin_user, admin_pass, final_ip, subnet, gateway)
-    
+
+    def _subnet_mask_to_prefix_length(self, subnet_mask: str) -> int:
+        """
+        Convert a subnet mask to CIDR prefix length
+        
+        Args:
+            subnet_mask: Subnet mask in dotted decimal format (e.g., 255.255.255.0)
+            
+        Returns:
+            CIDR prefix length (e.g., 24)
+        """
+        try:
+            # Use ipaddress module for reliable conversion
+            network = ipaddress.IPv4Network(f"0.0.0.0/{subnet_mask}", strict=False)
+            prefix_length = network.prefixlen
+            return prefix_length
+        except Exception as e:
+            # Fallback to manual calculation if ipaddress module method fails
+            try:
+                # Convert the subnet mask to an integer
+                subnet_int = int(ipaddress.IPv4Address(subnet_mask))
+                
+                # Count the number of '1' bits in the subnet mask
+                binary = bin(subnet_int)[2:]  # Convert to binary and remove '0b' prefix
+                prefix_length = binary.count('1')
+                
+                # Validate that the subnet mask is contiguous (all 1's followed by all 0's)
+                if subnet_int & (subnet_int + 1) != 0:
+                    raise ValueError("Invalid subnet mask: non-contiguous mask")
+                    
+                return prefix_length
+                
+            except Exception as e:
+                raise ValueError(f"Invalid subnet mask format: {str(e)}")
+                
     def _set_ip_using_json_api(self, base_url: str, admin_user: str, admin_pass: str,
                               final_ip: str, subnet: str, gateway: str) -> Tuple[bool, str]:
         """
@@ -623,16 +684,28 @@ class CameraOperations:
         # Convert subnet mask to prefix length (e.g., 255.255.255.0 -> 24)
         try:
             prefix_length = self._subnet_mask_to_prefix_length(subnet)
+            logging.info(f"Calculated prefix length {prefix_length} from subnet mask {subnet}")
         except ValueError as e:
             return False, f"Invalid subnet mask: {str(e)}"
         
+        # Calculate broadcast address for completeness
+        try:
+            ip_obj = ipaddress.IPv4Address(final_ip)
+            subnet_obj = ipaddress.IPv4Network(f"{final_ip}/{prefix_length}", strict=False)
+            broadcast = str(subnet_obj.broadcast_address)
+            logging.info(f"Calculated broadcast address: {broadcast}")
+        except Exception as e:
+            logging.warning(f"Could not calculate broadcast address: {str(e)}")
+            broadcast = ""  # Not including broadcast address in payload
+        
         # Modern JSON API endpoint 
         endpoint = "/axis-cgi/network_settings.cgi"
+        url = urljoin(base_url, endpoint)
         
-        # Prepare JSON payload
+        # Prepare JSON payload with better structure for Axis OS 10.12
         payload = {
             "apiVersion": "1.0",
-            "context": "AxisCameraUnifiedSetupTool",
+            "context": "AxisAutoConfig",
             "method": "setIPv4AddressConfiguration",
             "params": {
                 "deviceName": "eth0",  # Primary interface name (typically eth0 on Axis cameras)
@@ -647,22 +720,52 @@ class CameraOperations:
             }
         }
         
-        url = urljoin(base_url, endpoint)
-        headers = {'Content-Type': 'application/json'}
+        # Add broadcast address if successfully calculated
+        if broadcast:
+            payload["params"]["staticAddressConfigurations"][0]["broadcast"] = broadcast
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        logging.info(f"Sending network configuration payload: {json.dumps(payload, indent=2)}")
         
         for attempt in range(self.retry_count):
             try:
                 response = requests.post(
                     url,
-                    json=payload,
+                    json=payload,  # This sets the Content-Type header automatically
                     headers=headers,
                     auth=HTTPDigestAuth(admin_user, admin_pass),
                     timeout=self.timeout,
-                    verify=False
+                    verify=False  # Skip SSL verification
                 )
                 
+                # For debugging
+                logging.info(f"Network settings response status: {response.status_code}")
+                logging.info(f"Network settings response: {response.text}")
+                
+                # Check if request was successful
                 if response.status_code == 200:
-                    logging.info(f"Successfully set static IP {final_ip} (JSON API)")
+                    # Check if response contains JSON
+                    try:
+                        resp_json = response.json()
+                        if resp_json.get('error'):
+                            error_message = f"API error: {resp_json.get('error', {}).get('message', 'Unknown API error')}"
+                            logging.error(error_message)
+                            
+                            if attempt < self.retry_count - 1:
+                                logging.info(f"Retrying in {self.retry_delay} seconds...")
+                                time.sleep(self.retry_delay)
+                                continue
+                            else:
+                                return False, error_message
+                    except ValueError:
+                        # Not JSON response, but status code is 200
+                        pass
+                    
+                    logging.info(f"Successfully set static IP {final_ip} on camera")
                     return True, f"Static IP successfully set to {final_ip}"
                 
                 # Handle specific error cases
@@ -676,16 +779,17 @@ class CameraOperations:
                     return False, error_message
                     
             except Exception as e:
-                logging.error(f"Error setting static IP via JSON API: {str(e)}")
+                logging.error(f"Error setting static IP: {str(e)}")
                 
                 if attempt < self.retry_count - 1:
                     logging.info(f"Retrying in {self.retry_delay} seconds...")
                     time.sleep(self.retry_delay)
                 else:
-                    return False, f"Error setting static IP via JSON API: {str(e)}"
+                    return False, f"Error setting static IP: {str(e)}"
         
-        return False, f"Failed to set static IP via JSON API after {self.retry_count} attempts"
-        
+        # If we get here, all retry attempts failed
+        return False, f"Failed to set static IP after {self.retry_count} attempts"
+
     def _set_ip_using_param_cgi(self, base_url: str, admin_user: str, admin_pass: str,
                                final_ip: str, subnet: str, gateway: str) -> Tuple[bool, str]:
         """
@@ -702,19 +806,21 @@ class CameraOperations:
         Returns:
             Tuple of (success, message)
         """
-        # Legacy param.cgi endpoint
-        endpoint = "/axis-cgi/admin/param.cgi"
+        # Legacy param.cgi API endpoint
+        endpoint = "/axis-cgi/param.cgi"
+        url = urljoin(base_url, endpoint)
         
-        # Parameters for the request
+        # Parameters for the request - standard format for all Axis OS versions
         params = {
             "action": "update",
-            "Network.Ethernet.IPAddress": final_ip,
-            "Network.Ethernet.SubnetMask": subnet,
-            "Network.Ethernet.DefaultRouter": gateway,
-            "Network.Ethernet.IPAssignment": "static"
+            "Network.InterfaceName": "eth0",  # Typically eth0 is the main interface
+            "Network.BootProto": "static",    # Set to static mode
+            "Network.IPAddress": final_ip,
+            "Network.SubnetMask": subnet,
+            "Network.DefaultRouter": gateway
         }
         
-        url = urljoin(base_url, endpoint)
+        logging.info(f"Using legacy param.cgi API to set static IP: {final_ip}, subnet: {subnet}, gateway: {gateway}")
         
         for attempt in range(self.retry_count):
             try:
@@ -723,13 +829,27 @@ class CameraOperations:
                     params=params,
                     auth=HTTPDigestAuth(admin_user, admin_pass),
                     timeout=self.timeout,
-                    verify=False
+                    verify=False  # Skip SSL verification
                 )
                 
+                # Check if request was successful
                 if response.status_code == 200:
-                    logging.info(f"Successfully set static IP {final_ip} (param.cgi API)")
+                    # Some cameras return 200 but still have errors in the content
+                    if "Error" in response.text:
+                        error_message = f"API error: {response.text}"
+                        logging.error(error_message)
+                        
+                        if attempt < self.retry_count - 1:
+                            logging.info(f"Retrying in {self.retry_delay} seconds...")
+                            time.sleep(self.retry_delay)
+                            continue
+                        else:
+                            return False, error_message
+                    
+                    logging.info(f"Successfully set static IP {final_ip} using param.cgi API")
                     return True, f"Static IP successfully set to {final_ip}"
                 
+                # Handle specific error cases
                 error_message = f"Failed to set static IP (HTTP {response.status_code}): {response.text}"
                 logging.error(error_message)
                 
@@ -740,257 +860,13 @@ class CameraOperations:
                     return False, error_message
                     
             except Exception as e:
-                logging.error(f"Error setting static IP via param.cgi: {str(e)}")
+                logging.error(f"Error setting static IP: {str(e)}")
                 
                 if attempt < self.retry_count - 1:
                     logging.info(f"Retrying in {self.retry_delay} seconds...")
                     time.sleep(self.retry_delay)
                 else:
-                    return False, f"Error setting static IP via param.cgi: {str(e)}"
+                    return False, f"Error setting static IP: {str(e)}"
         
-        return False, f"Failed to set static IP via param.cgi after {self.retry_count} attempts"
-        
-    def _subnet_mask_to_prefix_length(self, subnet_mask: str) -> int:
-        """
-        Convert a subnet mask to CIDR prefix length
-        
-        Args:
-            subnet_mask: Subnet mask in dotted decimal format (e.g., 255.255.255.0)
-            
-        Returns:
-            CIDR prefix length (e.g., 24)
-        """
-        try:
-            # Convert the subnet mask to an integer
-            subnet_int = int(ipaddress.IPv4Address(subnet_mask))
-            
-            # Count the number of '1' bits in the subnet mask
-            binary = bin(subnet_int)
-            prefix_length = binary.count('1')
-            
-            # Validate that the subnet mask is contiguous
-            if subnet_int & (subnet_int + 1) != 0:
-                raise ValueError("Invalid subnet mask: non-contiguous mask")
-                
-            return prefix_length
-            
-        except Exception as e:
-            raise ValueError(f"Invalid subnet mask format: {str(e)}")
-    
-    def get_camera_mac_serial(self, ip: str, admin_user: str, admin_pass: str,
-                           protocol: str = "HTTP") -> Tuple[bool, Dict[str, str]]:
-        """
-        Get camera MAC address and serial number
-        
-        Args:
-            ip: Camera's IP address
-            admin_user: Administrator username for authentication
-            admin_pass: Administrator password for authentication
-            protocol: 'HTTP' or 'HTTPS'
-            
-        Returns:
-            Tuple of (success, {'mac': 'MAC address', 'serial': 'Serial number'})
-        """
-        logging.info(f"Getting MAC and serial number from camera at {ip}")
-        
-        # Construct the base URL
-        base_url = f"{protocol.lower()}://{ip}"
-        result = {}
-        
-        # First try to get the serial number using Properties.System.SerialNumber parameter
-        serial_success, serial_result = self._get_camera_serial_number(base_url, admin_user, admin_pass)
-        if serial_success:
-            result["serial"] = serial_result
-            
-        # Then try to get the MAC address using Network.Interface.I0.MACAddress parameter 
-        mac_success, mac_result = self._get_camera_mac_address(base_url, admin_user, admin_pass)
-        if mac_success:
-            result["mac"] = mac_result
-        
-        # If we got either the serial or MAC, consider it a success
-        if result:
-            return True, result
-        else:
-            logging.error(f"Failed to retrieve both MAC and serial number from {ip}")
-            return False, {"error": "Could not retrieve MAC or serial number"}
-    
-    def _get_camera_serial_number(self, base_url: str, admin_user: str, admin_pass: str) -> Tuple[bool, str]:
-        """Get camera serial number using VAPIX API"""
-        # Try using Properties API first
-        endpoint = "/axis-cgi/param.cgi"
-        params = {
-            "action": "list",
-            "group": "Properties.System.SerialNumber"
-        }
-        
-        url = urljoin(base_url, endpoint)
-        
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                auth=HTTPDigestAuth(admin_user, admin_pass),
-                timeout=self.timeout,
-                verify=False
-            )
-            
-            if response.status_code == 200:
-                # Parse the response to extract the serial number
-                match = re.search(r'Properties\.System\.SerialNumber=(\w+)', response.text)
-                if match:
-                    serial = match.group(1)
-                    logging.info(f"Retrieved camera serial number: {serial}")
-                    return True, serial
-            
-            # If the first method failed, try the basic device info endpoint
-            info_endpoint = "/axis-cgi/basicdeviceinfo.cgi"
-            info_url = urljoin(base_url, info_endpoint)
-            
-            info_response = requests.get(
-                info_url,
-                auth=HTTPDigestAuth(admin_user, admin_pass),
-                timeout=self.timeout,
-                verify=False
-            )
-            
-            if info_response.status_code == 200:
-                # Parse XML response
-                try:
-                    root = ET.fromstring(info_response.text)
-                    for child in root:
-                        if child.tag == "serialNumber":
-                            serial = child.text
-                            logging.info(f"Retrieved camera serial number: {serial}")
-                            return True, serial
-                except Exception as xml_error:
-                    logging.error(f"Error parsing XML from basicdeviceinfo.cgi: {str(xml_error)}")
-            
-            logging.error(f"Failed to retrieve camera serial number")
-            return False, ""
-            
-        except Exception as e:
-            logging.error(f"Error retrieving camera serial number: {str(e)}")
-            return False, ""
-    
-    def _get_camera_mac_address(self, base_url: str, admin_user: str, admin_pass: str) -> Tuple[bool, str]:
-        """Get camera MAC address using VAPIX API"""
-        endpoint = "/axis-cgi/param.cgi"
-        params = {
-            "action": "list",
-            "group": "Network.Interface.I0.MACAddress"
-        }
-        
-        url = urljoin(base_url, endpoint)
-        
-        try:
-            response = requests.get(
-                url,
-                params=params,
-                auth=HTTPDigestAuth(admin_user, admin_pass),
-                timeout=self.timeout,
-                verify=False
-            )
-            
-            if response.status_code == 200:
-                # Parse the response to extract the MAC address
-                match = re.search(r'Network\.Interface\.I0\.MACAddress=([0-9A-Fa-f:]+)', response.text)
-                if match:
-                    mac = match.group(1)
-                    # Format the MAC address as continuous uppercase hexadecimal without separators
-                    mac_formatted = mac.replace(':', '').upper()
-                    logging.info(f"Retrieved camera MAC address: {mac_formatted}")
-                    return True, mac_formatted
-            
-            # If the first method failed, try the basic device info endpoint
-            info_endpoint = "/axis-cgi/basicdeviceinfo.cgi"
-            info_url = urljoin(base_url, info_endpoint)
-            
-            info_response = requests.get(
-                info_url,
-                auth=HTTPDigestAuth(admin_user, admin_pass),
-                timeout=self.timeout,
-                verify=False
-            )
-            
-            if info_response.status_code == 200:
-                # Parse XML response
-                try:
-                    root = ET.fromstring(info_response.text)
-                    for child in root:
-                        if child.tag == "MACAddress":
-                            mac = child.text
-                            # Format the MAC address as continuous uppercase hexadecimal without separators
-                            mac_formatted = mac.replace(':', '').upper()
-                            logging.info(f"Retrieved camera MAC address: {mac_formatted}")
-                            return True, mac_formatted
-                except Exception as xml_error:
-                    logging.error(f"Error parsing XML from basicdeviceinfo.cgi: {str(xml_error)}")
-            
-            logging.error(f"Failed to retrieve camera MAC address")
-            return False, ""
-            
-        except Exception as e:
-            logging.error(f"Error retrieving camera MAC address: {str(e)}")
-            return False, ""
-    
-    def _make_vapix_request(self, url: str, auth: HTTPDigestAuth,
-                          params: Dict[str, str] = None) -> Tuple[bool, Any]:
-        """
-        Helper method to make VAPIX API requests
-        
-        Args:
-            url: Full URL for the request
-            auth: HTTPDigestAuth object with credentials
-            params: Optional parameters for the request
-            
-        Returns:
-            Tuple of (success, response_data)
-        """
-        try:
-            response = requests.get(
-                url,
-                auth=auth,
-                params=params,
-                timeout=self.timeout
-            )
-            
-            if response.status_code == 200:
-                return True, response.text
-            else:
-                return False, f"Request failed with status code {response.status_code}"
-                
-        except Exception as e:
-            return False, f"Request error: {str(e)}"
-    
-    def _make_onvif_request(self, ip: str, username: str, password: str,
-                          service: str, method: str, args: Dict[str, Any]) -> Tuple[bool, Any]:
-        """
-        Helper method to make ONVIF requests using zeep
-        
-        Args:
-            ip: Camera IP address
-            username: ONVIF username
-            password: ONVIF password
-            service: ONVIF service to use (e.g., 'device', 'media')
-            method: Method name to call
-            args: Method arguments
-            
-        Returns:
-            Tuple of (success, response_data)
-        """
-        # This is a simple stub implementation
-        # A full implementation would make ONVIF SOAP requests using zeep
-        
-        return True, {"stub_response": "ONVIF request would be made here"}
-
-
-# Basic test if run directly
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                      format='%(asctime)s - %(levelname)s - %(message)s')
-    
-    ops = CameraOperations()
-    
-    # Test a function
-    success, message = ops.create_initial_admin("192.168.0.50", "admin", "pass1234")
-    print(f"Result: {message}")
+        # If we get here, all retry attempts failed
+        return False, f"Failed to set static IP after {self.retry_count} attempts"

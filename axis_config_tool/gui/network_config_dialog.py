@@ -63,12 +63,53 @@ class NetworkConfigDialog(QDialog):
         self.create_csv_help_tab()
         
         main_layout.addWidget(self.tab_widget)
-        
-        # Standard dialog buttons
+          # Standard dialog buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        
+        # Add Save Settings button to button box
+        self.save_btn = button_box.addButton("Save Settings", QDialogButtonBox.ActionRole)
+        self.save_btn.setToolTip("Save current network configuration settings")
+        self.save_btn.clicked.connect(self.save_settings_as_default)
+        
         button_box.accepted.connect(self.validate_and_accept)
         button_box.rejected.connect(self.reject)
         main_layout.addWidget(button_box)
+        
+        # Load default settings if available
+        self.load_default_settings()
+        
+    def load_default_settings(self):
+        """Load previously saved default settings if available"""
+        try:
+            settings = QSettings("AxisAutoConfig", "SetupTool")
+            
+            # Load basic network settings
+            subnet_mask = settings.value("DefaultSubnetMask", "255.255.255.0")
+            gateway = settings.value("DefaultGateway", "")
+            protocol = settings.value("DefaultProtocol", "HTTP")
+            
+            # Apply settings to UI elements
+            self.subnet_mask.setText(subnet_mask)
+            self.default_gateway.setText(gateway)
+            protocol_index = self.vapix_protocol.findText(protocol) 
+            if protocol_index >= 0:
+                self.vapix_protocol.setCurrentIndex(protocol_index)
+            
+            # Load IP assignment mode
+            mode = settings.value("DefaultIPMode", "sequential")
+            if mode == "mac_specific":
+                self.mac_specific_radio.setChecked(True)
+            else:
+                self.sequential_radio.setChecked(True)
+            
+            # Update mode description
+            self.update_mode_description()
+            
+            # Log that settings were loaded
+            self.log_message.emit("Loaded default network settings")
+            
+        except Exception as e:
+            self.log_message.emit(f"Error loading default settings: {str(e)}")
     
     def create_basic_settings_tab(self):
         """Create the basic network settings tab"""
@@ -98,6 +139,13 @@ class NetworkConfigDialog(QDialog):
         self.vapix_protocol.addItems(["HTTP", "HTTPS"])
         self.vapix_protocol.setToolTip("Protocol to use for camera configuration (HTTP recommended)")
         net_layout.addWidget(self.vapix_protocol, net_row, 1)
+        net_row += 1
+        
+        # Save Settings Button
+        self.save_settings_btn = QPushButton("Save as Default Settings")
+        self.save_settings_btn.setToolTip("Save these network settings as defaults for future use")
+        self.save_settings_btn.clicked.connect(self.save_settings_as_default)
+        net_layout.addWidget(self.save_settings_btn, net_row, 1)
         
         # Add some explanatory text
         help_text = QLabel(
@@ -382,3 +430,35 @@ class NetworkConfigDialog(QDialog):
         
         # Close dialog
         self.accept()
+    
+    def save_settings_as_default(self):
+        """Save the current network settings as default values"""
+        try:
+            settings = QSettings("AxisAutoConfig", "SetupTool")
+            
+            # Save basic network settings
+            settings.setValue("DefaultSubnetMask", self.subnet_mask.text().strip())
+            settings.setValue("DefaultGateway", self.default_gateway.text().strip())
+            settings.setValue("DefaultProtocol", self.vapix_protocol.currentText())
+            
+            # Save IP assignment mode
+            mode = "mac_specific" if self.mac_specific_radio.isChecked() else "sequential"
+            settings.setValue("DefaultIPMode", mode)
+            
+            # Show confirmation message
+            QMessageBox.information(
+                self,
+                "Settings Saved",
+                "Current network settings have been saved as defaults for future use."
+            )
+            
+            # Emit log message
+            self.log_message.emit("Network settings saved as defaults")
+            
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"Could not save settings: {str(e)}"
+            )
+            self.log_message.emit(f"Error saving network settings: {str(e)}")

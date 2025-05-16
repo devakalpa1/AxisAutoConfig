@@ -18,12 +18,10 @@ from PySide6.QtCore import Qt, Signal, Slot, QSettings
 
 
 class DHCPServerDialog(QDialog):
-    """Dialog for DHCP server configuration and control"""
+    """Dialog for DHCP server configuration"""
     
     # Custom signals
-    dhcp_started = Signal(str)  # Emits server IP when started
-    dhcp_stopped = Signal()
-    dhcp_status_update = Signal(str)  # Emits status message
+    configuration_updated = Signal(dict)  # Emits configuration settings
     log_message = Signal(str)  # Emits log message
     
     def __init__(self, dhcp_manager, parent=None):
@@ -31,10 +29,8 @@ class DHCPServerDialog(QDialog):
         super().__init__(parent)
         
         self.dhcp_manager = dhcp_manager
-        self.is_dhcp_running = False
-        self.dhcp_worker = None
         
-        self.setWindowTitle("DHCP Server Configuration")
+        self.setWindowTitle("DHCP Server Settings Configuration")
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
         self.setModal(True)  # Make it a modal dialog
@@ -121,39 +117,19 @@ class DHCPServerDialog(QDialog):
         
         main_layout.addWidget(dhcp_group)
         
-        # DHCP Server Controls
-        controls_frame = QFrame()
-        controls_layout = QHBoxLayout(controls_frame)
-        
-        self.start_dhcp_btn = QPushButton("Start DHCP Server")
-        self.start_dhcp_btn.clicked.connect(self.start_dhcp_server)
-        controls_layout.addWidget(self.start_dhcp_btn)
-        
-        self.stop_dhcp_btn = QPushButton("Stop DHCP Server")
-        self.stop_dhcp_btn.clicked.connect(self.stop_dhcp_server)
-        self.stop_dhcp_btn.setEnabled(False)
-        controls_layout.addWidget(self.stop_dhcp_btn)
-        
-        main_layout.addWidget(controls_frame)
-        
-        # DHCP Status
-        status_frame = QFrame()
-        status_layout = QHBoxLayout(status_frame)
-        
-        status_layout.addWidget(QLabel("DHCP Server Status:"))
-        self.dhcp_status_label = QLabel("Stopped")
-        self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
-        status_layout.addWidget(self.dhcp_status_label)
-        status_layout.addStretch(1)  # Push labels to the left
-        
-        main_layout.addWidget(status_frame)
+        # Add information about moving controls to main window
+        info_label = QLabel("DHCP server control buttons (Start/Stop) are available on the main window.")
+        info_label.setStyleSheet("color: #0066cc; font-style: italic;")
+        info_label.setWordWrap(True)
+        main_layout.addWidget(info_label)
         
         # Add spacer before the buttons to push everything up
         main_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
-        # Standard dialog buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Close)
-        button_box.rejected.connect(self.handle_close)
+        # Standard dialog buttons with Apply/Save
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.save_configuration)
+        button_box.rejected.connect(self.reject)
         main_layout.addWidget(button_box)
         
         # Initialize with default settings
@@ -196,8 +172,8 @@ class DHCPServerDialog(QDialog):
         self.dhcp_lease_time.setEnabled(enabled)
     
     @Slot()
-    def start_dhcp_server(self):
-        """Start the DHCP server"""
+    def save_configuration(self):
+        """Save DHCP server configuration"""
         if not self.network_interfaces_combo.currentData():
             QMessageBox.warning(self, "Configuration Error", "No network interface selected")
             self.log_message.emit("Error: No network interface selected")
@@ -224,7 +200,16 @@ class DHCPServerDialog(QDialog):
             self.log_message.emit("Error: Invalid lease time value")
             return
         
-        # Configure DHCP server
+        # Create configuration dictionary to emit
+        config = {
+            'interface': interface,
+            'server_ip': server_ip,
+            'start_ip': start_ip,
+            'end_ip': end_ip,
+            'lease_time': lease_time
+        }
+        
+        # Configure DHCP server in manager (but don't start it)
         try:
             self.dhcp_manager.configure(
                 interface=interface, 
@@ -234,103 +219,35 @@ class DHCPServerDialog(QDialog):
                 lease_time=lease_time
             )
             
-            # Start DHCP server in worker thread
-            from axis_config_tool.workers.unified_worker import DHCPWorker
-            self.dhcp_worker = DHCPWorker(self.dhcp_manager)
-            self.dhcp_worker.status_update.connect(self.update_dhcp_status)
-            self.dhcp_worker.log_message.connect(self.forward_log_message)
-            self.dhcp_worker.start()
+            self.log_message.emit(f"DHCP server configured: interface={interface}, IP range={start_ip} to {end_ip}")
             
-            # Update UI
-            self.start_dhcp_btn.setEnabled(False)
-            self.stop_dhcp_btn.setEnabled(True)
-            self.network_interfaces_combo.setEnabled(False)
-            self.is_dhcp_running = True
+            # Emit configuration updated signal
+            self.configuration_updated.emit(config)
             
-            self.log_message.emit(f"DHCP server starting on {interface} with IP range {start_ip} to {end_ip}")
-            
-            # Emit signal that DHCP server has been started
-            self.dhcp_started.emit(server_ip)
+            # Close dialog
+            self.accept()
             
         except Exception as e:
-            QMessageBox.critical(self, "DHCP Server Error", f"Failed to start DHCP server: {str(e)}")
-            self.log_message.emit(f"Error starting DHCP server: {str(e)}")
+            QMessageBox.critical(self, "DHCP Configuration Error", f"Failed to configure DHCP server: {str(e)}")
+            self.log_message.emit(f"Error configuring DHCP server: {str(e)}")
     
-    @Slot()
-    def stop_dhcp_server(self):
-        """Stop the DHCP server"""
-        if self.dhcp_worker and self.is_dhcp_running:
-            try:
-                # Signal worker to stop
-                self.dhcp_worker.stop()
-                self.dhcp_worker = None
-                
-                # Update UI
-                self.start_dhcp_btn.setEnabled(True)
-                self.stop_dhcp_btn.setEnabled(False)
-                self.network_interfaces_combo.setEnabled(True)
-                self.is_dhcp_running = False
-                self.update_dhcp_status("Stopped")
-                
-                self.log_message.emit("DHCP server stopped")
-                
-                # Emit signal that DHCP server has been stopped
-                self.dhcp_stopped.emit()
-                
-            except Exception as e:
-                QMessageBox.warning(self, "DHCP Server Error", f"Error stopping DHCP server: {str(e)}")
-                self.log_message.emit(f"Error stopping DHCP server: {str(e)}")
-    
-    @Slot(str)
-    def update_dhcp_status(self, status):
-        """Update the DHCP server status label"""
-        self.dhcp_status_label.setText(status)
-        if status == "Running":
-            self.dhcp_status_label.setStyleSheet("color: green; font-weight: bold;")
-        else:
-            self.dhcp_status_label.setStyleSheet("color: red; font-weight: bold;")
+    def get_current_configuration(self):
+        """Get the current DHCP configuration settings"""
+        if not self.network_interfaces_combo.currentData():
+            return None
+            
+        interface_data = self.network_interfaces_combo.currentData()
         
-        # Pass the status update to any listeners
-        self.dhcp_status_update.emit(status)
+        config = {
+            'interface': interface_data["name"],
+            'server_ip': self.dhcp_server_ip.text(),
+            'start_ip': self.dhcp_start_ip.text(),
+            'end_ip': self.dhcp_end_ip.text(),
+            'lease_time': int(self.dhcp_lease_time.text()) if self.dhcp_lease_time.text().isdigit() else 3600
+        }
+        
+        return config
     
     def forward_log_message(self, message):
         """Forward log messages from workers to the main window"""
         self.log_message.emit(message)
-    
-    def handle_close(self):
-        """Handle dialog close request"""
-        if self.is_dhcp_running:
-            reply = QMessageBox.question(
-                self, "DHCP Server Running",
-                "The DHCP server is still running. Would you like to stop it before closing?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-            )
-            
-            if reply == QMessageBox.Yes:
-                self.stop_dhcp_server()
-                self.accept()
-            elif reply == QMessageBox.No:
-                self.accept()  # Close but leave DHCP running
-            else:  # Cancel
-                return  # Don't close
-        else:
-            self.accept()
-    
-    def closeEvent(self, event):
-        """Override close event to ensure proper shutdown"""
-        if self.is_dhcp_running:
-            reply = QMessageBox.question(
-                self, "DHCP Server Running",
-                "The DHCP server is still running. Would you like to stop it before closing?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
-            )
-            
-            if reply == QMessageBox.Yes:
-                self.stop_dhcp_server()
-                event.accept()
-            elif reply == QMessageBox.No:
-                event.accept()  # Close but leave DHCP running
-            else:  # Cancel
-                event.ignore()
-        else:
-            event.accept()
